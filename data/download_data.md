@@ -1,0 +1,1 @@
+Access the training data here: [https://drive.google.com/file/d/1hW3X9IGq7fu_1aw6joTI_WU6_gai7Pwy/view](https://drive.google.com/file/d/1hW3X9IGq7fu_1aw6joTI_WU6_gai7Pwy/view). After downloading from google drive, move the `lut_inuse.npz` file into this directory (`data/lut_inuse.npz`).
