@@ -26,7 +26,7 @@
 #%%
 import os
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import jax
 import jax.numpy as jnp
@@ -45,8 +45,8 @@ from utils import integrate_path_mult
 # parser.add_argument('--config', type=str, required=True)
 # args = parser.parse_args()
 
-config_f = '/home/fadTG/configs/20230222_082549_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_x>1_y<|6|noshrink.yaml'
-ckpt = '/home/fadTG/ckpts/20230222_082549_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_x>1_y<|6|noshrink/checkpoint_0'
+config_f = '/home/irbfn/configs/default.yaml'
+ckpt = '/home/irbfn/ckpts/checkpoint_0'
 with open(config_f, 'r') as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
