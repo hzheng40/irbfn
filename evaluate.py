@@ -38,7 +38,7 @@ from model import WCRBFNet
 from flax_rbf import *
 import optax
 import yaml
-from utils import integrate_path_mult
+from utils import integrate_path_mult, N
 
 # %%
 
@@ -48,6 +48,9 @@ with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
 
+# uncomment the following line (53) and line 206 to create memory profile, will slow down inference significantly
+# see https://jax.readthedocs.io/en/latest/profiling.html#programmatic-capture for how to inspect
+# jax.profiler.start_trace('./tensorboard_profiler')
 
 # pred one step
 @jax.jit
@@ -78,11 +81,12 @@ state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=op
 # empty_state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=jax.tree_map(np.zeros_like, params['params']), tx=optim)
 restored_state = checkpoints.restore_checkpoint(ckpt_dir=ckpt, target=state)
 # %%
+
+# plotting points
 # test_x = jnp.linspace(6, 6, 20)
 test_x = jnp.array([5.0])
 test_y = jnp.linspace(-4.0, 4.0, 20)
 test_t = jnp.linspace(-0.3, 0.3, 10)
-# test kappas are zeros
 
 # stacking testing points, final matrix should be shape (batch_size, 4)
 xm, ym, tm = jnp.meshgrid(test_x, test_y, test_t, indexing="ij")
@@ -90,8 +94,6 @@ test_idx = jnp.stack((xm, ym, tm), axis=-1)
 test_flat = test_idx.reshape((-1, 3))
 test_kappa = jnp.zeros((test_flat.shape[0], 1))
 test = jnp.hstack((test_flat, test_kappa))
-# test_x_change = jnp.linspace(-3, 1, test.shape[0])
-# test = test.at[:, 0].add(test_x_change)
 
 y_pred = jnp.zeros((test.shape[0], 5))
 
@@ -113,15 +115,13 @@ y_pred = y_pred.at[:, 1:3].set(y_pred_raw[:, 1:])
 
 all_states = integrate_path_mult(y_pred)
 
-print(all_states.shape)
-
 # %%
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 
 plt.rcParams["figure.figsize"] = [15, 10]
 plt.rcParams["figure.dpi"] = 150
-plt.rcParams["font.family"] = "Times New Roman"
+# plt.rcParams["font.family"] = "Times New Roman"
 plt.rcParams["font.size"] = 30
 
 col = mpl.colormaps["tab20"]
@@ -153,19 +153,109 @@ plt.legend(loc="lower left")
 fig.tight_layout()
 plt.savefig("traj_out.pdf", format="pdf", bbox_inches="tight")
 plt.savefig("traj_out.png", format="png", bbox_inches="tight")
-plt.show()
 # %%
 
-import time
+import chex
 
-start = time.time()
-y_pred_raw = pred_step(restored_state, test)
+chex.clear_trace_counter()
+# profile: time of random evals
+
+# profiling points
+test_x = jnp.linspace(6, 6, 10)
+test_y = jnp.linspace(-4.0, 4.0, 10)
+test_t = jnp.linspace(-0.3, 0.3, 5)
+xm, ym, tm = jnp.meshgrid(test_x, test_y, test_t, indexing="ij")
+test_idx = jnp.stack((xm, ym, tm), axis=-1)
+test_flat = test_idx.reshape((-1, 3))
+test_kappa = jnp.zeros((test_flat.shape[0], 1))
+test = jnp.hstack((test_flat, test_kappa))
+
 y_pred = jnp.zeros((test.shape[0], 5))
+
+# jit
+y_pred_raw = pred_step(restored_state, test)
+# y_pred should have columns (0, k1, k2, 0, s)
+# y_pred_raw has (s, k1, k2)
 y_pred = y_pred.at[:, -1].set(y_pred_raw[:, 0])
 y_pred = y_pred.at[:, 1:3].set(y_pred_raw[:, 1:])
 
 all_states = integrate_path_mult(y_pred)
-end = time.time()
-print("elapsed:", end - start)
 
+import time
+
+num_eval = 1000
+print("-----------------------------")
+print(
+    "Profiling "
+    + str(num_eval)
+    + " evaluation of generating "
+    + str(test.shape[0])
+    + " Random Trajectories with IRBFN."
+)
+noise = jax.random.normal(rng, (num_eval, *test.shape))
+
+start = time.time()
+for ei in range(num_eval):
+    y_pred_raw = pred_step(restored_state, test + noise[ei])
+    y_pred = jnp.zeros((test.shape[0], 5))
+    y_pred = y_pred.at[:, -1].set(y_pred_raw[:, 0])
+    y_pred = y_pred.at[:, 1:3].set(y_pred_raw[:, 1:])
+
+    all_states = integrate_path_mult(y_pred)
+
+# jax.profiler.stop_trace()
+end = time.time()
+print("Total elapsed:", end - start)
+print("Elapsed per eval:", str((end - start) / num_eval))
+print("TrajGen frequency:", str(num_eval / (end - start)), "Hz")
+
+# %%
+
+# Profiling generation through optimization online
+# https://pyclothoids.readthedocs.io/en/latest/
+from pyclothoids import Clothoid
+
+
+def sample_traj(clothoid):
+    traj = np.empty((N, 4))
+    k0 = clothoid.Parameters[3]
+    dk = clothoid.Parameters[4]
+
+    for i in range(N):
+        s = i * (clothoid.length / max(N - 1, 1))
+        traj[i, 0] = clothoid.X(s)
+        traj[i, 1] = clothoid.Y(s)
+        traj[i, 2] = clothoid.Theta(s)
+        traj[i, 3] = np.sqrt(clothoid.XDD(s) ** 2 + clothoid.YDD(s) ** 2)
+    return traj
+
+
+# same evaluation goals
+test_np = np.array(test)
+num_eval = 100
+noise_np = np.random.standard_normal((num_eval, *test_np.shape))
+all_traj = []
+print("-----------------------------")
+print(
+    "Profiling "
+    + str(num_eval)
+    + " evaluation of generating "
+    + str(test_np.shape[0])
+    + " Random Trajectories with Online Optimization."
+)
+# profile once
+start = time.time()
+for i in range(num_eval):
+    test_np_noised = test_np + noise_np[i]
+    for p in test_np_noised:
+        clothoid = Clothoid.G1Hermite(0, 0, 0, p[0], p[1], p[2])
+        traj = sample_traj(clothoid)
+        all_traj.append(traj)
+    all_traj_np = np.array(all_traj)
+
+end = time.time()
+print("Total elapsed:", end - start)
+print("Elapsed per eval:", str((end - start) / num_eval))
+print("TrajGen frequency:", str(num_eval / (end - start)), "Hz")
+print("-----------------------------")
 # %%
