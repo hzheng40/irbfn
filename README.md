@@ -1,6 +1,10 @@
 # Interpolating Radial Basis Function Networks
 Code for IROS 2023 paper: Differentiable Trajectory Generation for Car-like Robots by Interpolating Radial Basis Function Networks
 
+## Prerequisite
+
+1. NVIDIA driver version 520.61.5+ is required.
+
 ## Installation
 
 1. Clone this repo, then `cd irbfn`
