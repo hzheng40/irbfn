@@ -4,11 +4,12 @@ Code for IROS 2023 paper: Differentiable Trajectory Generation for Car-like Robo
 ## Installation
 
 1. Clone this repo, then `cd irbfn`
-2. Build docker image from Dockerfile:
+2. Update submodule. `git submodule sync && git submodule update --init --force`
+3. Build docker image from Dockerfile:
 ```bash
 sudo docker build -t irbfn -f Dockerfile .
 ```
-3. Run the docker container:
+1. Run the docker container:
 ```bash
 sudo ./run_container.sh
 ```
