@@ -52,6 +52,7 @@ conf = argparse.Namespace(**config_dict)
 # see https://jax.readthedocs.io/en/latest/profiling.html#programmatic-capture for how to inspect
 # jax.profiler.start_trace('./tensorboard_profiler')
 
+
 # pred one step
 @jax.jit
 def pred_step(state, x):
@@ -161,7 +162,7 @@ chex.clear_trace_counter()
 # profile: time of random evals
 
 # profiling points
-test_x = jnp.linspace(6, 6, 10)
+test_x = jnp.linspace(2, 6, 10)
 test_y = jnp.linspace(-4.0, 4.0, 10)
 test_t = jnp.linspace(-0.3, 0.3, 5)
 xm, ym, tm = jnp.meshgrid(test_x, test_y, test_t, indexing="ij")
@@ -233,8 +234,8 @@ def sample_traj(clothoid):
 # same evaluation goals
 test_np = np.array(test)
 num_eval = 100
-noise_np = np.random.standard_normal((num_eval, *test_np.shape))
-all_traj = []
+noise_np = np.array(noise)
+
 print("-----------------------------")
 print(
     "Profiling "
@@ -246,6 +247,7 @@ print(
 # profile once
 start = time.time()
 for i in range(num_eval):
+    all_traj = []
     test_np_noised = test_np + noise_np[i]
     for p in test_np_noised:
         clothoid = Clothoid.G1Hermite(0, 0, 0, p[0], p[1], p[2])
@@ -258,4 +260,23 @@ print("Total elapsed:", end - start)
 print("Elapsed per eval:", str((end - start) / num_eval))
 print("TrajGen frequency:", str(num_eval / (end - start)), "Hz")
 print("-----------------------------")
+# %%
+# error calculation
+print("Evaluating average error across region:")
+print("x: ", str(test_x.min()), "meters to", str(test_x.max()), "meters")
+print("y: ", str(test_y.min()), "meters to", str(test_y.max()), "meters")
+print("theta: ", str(test_t.min()), "radians to", str(test_t.max()), "radians")
+y_pred_raw = pred_step(restored_state, test)
+y_pred = jnp.zeros((test.shape[0], 5))
+y_pred = y_pred.at[:, -1].set(y_pred_raw[:, 0])
+y_pred = y_pred.at[:, 1:3].set(y_pred_raw[:, 1:])
+all_states = integrate_path_mult(y_pred)
+
+error = test[:, :3] - np.array(all_states)[:, -1, :3]
+avg_err = np.sum(np.abs(error), axis=0) / test.shape[0]
+print("-----------------------------")
+print("Errors on x:", str(avg_err[0]), "meters")
+print("Errors on y:", str(avg_err[1]), "meters")
+print("Errors on theta:", str(avg_err[2]), "radians")
+
 # %%
