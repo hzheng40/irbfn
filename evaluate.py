@@ -274,9 +274,54 @@ all_states = integrate_path_mult(y_pred)
 
 error = test[:, :3] - np.array(all_states)[:, -1, :3]
 avg_err = np.sum(np.abs(error), axis=0) / test.shape[0]
-print("-----------------------------")
-print("Errors on x:", str(avg_err[0]), "meters")
-print("Errors on y:", str(avg_err[1]), "meters")
-print("Errors on theta:", str(avg_err[2]), "radians")
 
+print("-----------------------------")
+print("Experimental Errors")
+print("Trajectory Endpoint Error on x:", str(avg_err[0]), "meters")
+print("Trajectory Endpoint Error on y:", str(avg_err[1]), "meters")
+print("Trajectory Endpoint Error on theta:", str(avg_err[2]), "radians")
+print("-----------------------------")
+print("Theoretical Errors")
+training_spacing = 0.1
+arc_lengths = np.array(y_pred[:, -1])
+infty_norm_func = arc_lengths.max()
+integration_spacing = infty_norm_func / N
+N_training_points = 3213142
+alpha = 1
+L = 1000
+param_err_the = (1 / (N_training_points ^ alpha)) * (
+    L * 2 ** (alpha / 2 + 1) * training_spacing**alpha
+    + 2 ** (alpha / 2) * training_spacing**alpha * infty_norm_func
+    + infty_norm_func
+)
+
+theory_end_point_err_x = 0
+theory_end_point_err_y = 0
+theory_end_point_err_theta = 0
+
+for i_te in range(N):
+    dtheta = param_err_the * (
+        integration_spacing
+        + integration_spacing**2
+        + integration_spacing**3
+        + integration_spacing**4
+    )
+    theory_end_point_err_theta += dtheta
+    dx = np.cos(np.pi/2 - theory_end_point_err_theta)
+    dy = np.sin(theory_end_point_err_theta)
+    theory_end_point_err_x += dx
+    theory_end_point_err_y += dy
+
+print(
+    "Theoretical Trajectory Endpoint Error on x:", str(theory_end_point_err_x), "meters"
+)
+print(
+    "Theoretical Trajectory Endpoint Error on y:", str(theory_end_point_err_y), "meters"
+)
+print(
+    "Theoretical Trajectory Endpoint Error on theta:",
+    str(theory_end_point_err_theta),
+    "radians",
+)
+print("-----------------------------")
 # %%
