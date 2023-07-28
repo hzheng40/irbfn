@@ -51,15 +51,21 @@ idxlut = np.stack((xlutm, ylutm, tlutm), axis=-1)
 # look up columns are: x, y, theta
 flattened_idxlut = idxlut.reshape((-1, 3))
 # stored data colums are: k0, kd, sf
-# lut = np.empty((flattened_idxlut.shape[0], 3))
+# lut = np.empty((len(xlut), len(ylut), len(tlut), 3))
 
 # generate with parfor
 def gentraj(goal):
     clothoid = pyclothoids.Clothoid.G1Hermite(0, 0, 0, goal[0], goal[1], goal[2])
-    return clothoid.Parameters[3:]
+    k0 = clothoid.Parameters[3]
+    dk = clothoid.Parameters[4]
+    s = clothoid.Parameters[5]
+    k1 = k0 + (1/3)*s*dk
+    k2 = k0 + (2/3)*s*dk
+    k3 = k0 + (3/3)*s*dk
+    return [k0, k1, k2, k3, s]
 
 lut = joblib.Parallel(n_jobs=100)(joblib.delayed(gentraj)(goal_i) for goal_i in tqdm(flattened_idxlut))
 
-lut = np.array(lut)
+lut = np.array(lut).reshape((len(xlut), len(ylut), len(tlut), 5))
 
-np.savez('lut.npz', idxlut=flattened_idxlut, lut=lut)
+np.savez('lut_allkappa.npz', lut=lut, xlut=xlut, ylut=ylut, tlut=tlut)
