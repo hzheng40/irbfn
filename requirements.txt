@@ -3,6 +3,7 @@ jax[cuda]==0.3.24
 chex==0.1.6
 flax==0.6.1
 optax
+distrax
 matplotlib==3.6.0
 scipy==1.8.1
 tqdm
