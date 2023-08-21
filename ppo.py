@@ -35,8 +35,10 @@ import os
 import random
 from datetime import datetime
 from distutils.util import strtobool
+from functools import partial
 from typing import Callable
 
+import chex
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
@@ -46,6 +48,7 @@ from distrax import Categorical
 from flax import struct
 from flax.core import FrozenDict
 from flax.training import train_state
+from jax.lax import stop_gradient
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
 
@@ -259,12 +262,98 @@ def get_action_and_value_and_sample(
     return storage, action, key
 
 
+@jax.jit
 def anneal_schedule(step):
     """
     Anneals learning rate
     """
     frac = 1.0 - (update - 1.0) / num_updates
     lrnow = frac * args.lr
+
+
+@partial(
+    jax.jit,
+    static_argnums=[
+        4,
+    ],
+)
+@chex.assert_max_traces(n=2)
+def calc_gae(
+    agent_state: AgentState,
+    next_obs: np.ndarray,
+    next_done: np.ndarray,
+    storage: Storage,
+    args: argparse.Namespace,
+):
+    storage = storage.replace(advantages=storage.advantages.at[:].set(0.0))
+    next_value = agent_state.critic_fn(
+        agent_state.params.critic_params, next_obs
+    ).squeeze()
+    lastgaelam = 0
+    for t in reversed(range(args.num_steps)):
+        if t == args.num_steps - 1:
+            nextnonterminal = 1.0 - next_done
+            nextvalues = next_value
+        else:
+            nextnonterminal = 1.0 - storage.dones[t + 1]
+            nextvalues = storage.values[t + 1]
+        delta = (
+            storage.rewards[t]
+            + args.gamma * nextvalues * nextnonterminal
+            - storage.values[t]
+        )
+        lastgaelam = delta + args.gamma * args.gae_lambda * nextnonterminal * lastgaelam
+        storage = storage.replace(advantages=storage.advantages.at[t].set(lastgaelam))
+    storage = storage.replace(returns=storage.advantages + storage.values)
+    return storage
+
+
+@partial(
+    jax.jit,
+    static_argnums=[
+        8,
+    ],
+)
+@chex.assert_max_traces(n=2)
+def calc_ppo_loss(
+    agent_state: AgentState,
+    params: AgentParams,
+    obs: np.ndarray,
+    act: np.ndarray,
+    logp: np.ndarray,
+    adv: np.ndarray,
+    ret: np.ndarray,
+    val: np.ndarray,
+    args: argparse.Namespace,
+):
+    newlogprob, entropy, newvalue = get_action_and_value_and_sample(
+        agent_state, params, obs, act
+    )
+    logratio = newlogprob - logp
+    ratio = jnp.exp(logratio)
+
+    approx_kl = ((ratio - 1) - logratio).mean()
+
+    adv = (adv - adv.mean()) / (adv.std() + 1e-8)
+
+    pg_loss1 = -adv * ratio
+    pg_loss2 = -adv * jnp.clip(ratio, 1 - args.clip_coef, 1 + args.clip_coef)
+    pg_loss = jnp.maximum(pg_loss1, pg_loss2).mean()
+
+    v_loss_unclipped = (newvalue - ret) ** 2
+    v_clipped = val + jnp.clip(newvalue - val, -args.clip_coef, args.clip_coef)
+    v_loss_clipped = (v_clipped - ret) ** 2
+    v_loss_max = jnp.maximum(v_loss_unclipped, v_loss_clipped)
+    v_loss = 0.5 * v_loss_max.mean()
+
+    entropy_loss = entropy.mean()
+
+    loss = pg_loss - args.ent_coef * entropy_loss + args.vf_coef * v_loss
+    return loss, (pg_loss, v_loss, entropy_loss, stop_gradient(approx_kl))
+
+
+def update_ppo(agent_state: AgentState, storage: Storage, key: jax.random.PRNGKeyArray):
+    pass  # TODO
 
 
 if __name__ == "__main__":
@@ -285,7 +374,6 @@ if __name__ == "__main__":
     rng, init_rng = jax.random.split(rng)
 
     # agent
-    agent = Agent()
 
     # start
     global_step = 0
