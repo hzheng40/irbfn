@@ -8,3 +8,5 @@ matplotlib==3.6.0
 scipy==1.8.1
 tqdm
 tensorflow
+git+https://github.com/google/trajax
+cvxpy

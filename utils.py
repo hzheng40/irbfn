@@ -110,3 +110,31 @@ def integrate_path(params):
         states = states.at[k].set(jnp.stack([x, y, theta_k, kappa_k]))
         theta_old = theta_k
     return states
+
+@jax.jit
+@chex.assert_max_traces(n=1)
+def nearest_point_on_trajectory(point, trajectory):
+    diffs = trajectory[1:, :] - trajectory[:-1, :]
+    l2s = diffs[:, 0] ** 2 + diffs[:, 1] ** 2
+    # this is equivalent to the elementwise dot product
+    # dots = np.sum((point - trajectory[:-1,:]) * diffs[:,:], axis=1)
+    dots = jnp.empty((trajectory.shape[0] - 1,))
+    for i in range(dots.shape[0]):
+        dots[i] = jnp.dot((point - trajectory[i, :]), diffs[i, :])
+    t = dots / l2s
+    t[t < 0.0] = 0.0
+    t[t > 1.0] = 1.0
+    # t = np.clip(dots / l2s, 0.0, 1.0)
+    projections = trajectory[:-1, :] + (t * diffs.T).T
+    # dists = np.linalg.norm(point - projections, axis=1)
+    dists = jnp.empty((projections.shape[0],))
+    for i in range(dists.shape[0]):
+        temp = point - projections[i]
+        dists[i] = jnp.sqrt(jnp.sum(temp * temp))
+    min_dist_segment = jnp.argmin(dists)
+    return (
+        projections[min_dist_segment],
+        dists[min_dist_segment],
+        t[min_dist_segment],
+        min_dist_segment,
+    )

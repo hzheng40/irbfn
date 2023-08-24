@@ -33,6 +33,7 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 import argparse
 import os
 import random
+import time
 from datetime import datetime
 from distutils.util import strtobool
 from functools import partial
@@ -47,10 +48,14 @@ import optax
 from distrax import Categorical
 from flax import struct
 from flax.core import FrozenDict
-from flax.training import train_state
+from flax.training import train_state, checkpoints
 from jax.lax import stop_gradient
 from torch.utils.tensorboard import SummaryWriter
 from tqdm import tqdm
+
+import gymnasium as gym
+from model import WCRBFNet
+from utils import integrate_path_mult, N
 
 
 def parse_args():
@@ -352,8 +357,64 @@ def calc_ppo_loss(
     return loss, (pg_loss, v_loss, entropy_loss, stop_gradient(approx_kl))
 
 
-def update_ppo(agent_state: AgentState, storage: Storage, key: jax.random.PRNGKeyArray):
-    pass  # TODO
+def update_ppo(
+    agent_state: AgentState,
+    storage: Storage,
+    key: jax.random.PRNGKeyArray,
+    obs_space_shape: int,
+    action_space_shape: int,
+    args: argparse.Namespace,
+):
+    b_obs = storage.obs.reshape((-1,) + action_space_shape)
+    b_logprobs = storage.logprobs.reshape(-1)
+    b_actions = storage.actions.reshape((-1,) + action_space_shape)
+    b_advantages = storage.advantages.reshape(-1)
+    b_returns = storage.returns.reshape(-1)
+    b_values = storage.values.reshape(-1)
+
+    ppo_loss_grad_fn = jax.jit(
+        jax.value_and_grad(calc_ppo_loss, argnums=1, has_aux=True)
+    )
+
+    for epoch in range(args.update_epochs):
+        key, subkey = jax.random.split(key)
+        b_inds = jax.random.permutation(subkey, args.batch_size, independent=True)
+        for start in range(0, args.batch_size, args.minibatch_size):
+            end = start + args.minibatch_size
+            mb_inds = b_inds[start:end]
+            (
+                loss,
+                (pg_loss, v_loss, entropy_loss, approx_kl),
+            ), grads = ppo_loss_grad_fn(
+                agent_state,
+                agent_state.params,
+                b_obs[mb_inds],
+                b_actions[mb_inds],
+                b_logprobs[mb_inds],
+                b_advantages[mb_inds],
+                b_returns[mb_inds],
+                b_values[mb_inds],
+            )
+
+            agent_state = agent_state.apply_gradients(grads=grads)
+
+    y_pred, y_true = b_values, b_returns
+    var_y = jnp.var(y_true)
+    explained_var = np.nan if var_y == 0 else 1 - np.var(y_true - y_pred) / var_y
+    return (
+        agent_state,
+        loss,
+        pg_loss,
+        v_loss,
+        entropy_loss,
+        approx_kl,
+        explained_var,
+        key,
+    )
+
+class WCRBFNPlanner():
+    def __init__(self) -> None:
+        pass
 
 
 if __name__ == "__main__":
@@ -371,12 +432,18 @@ if __name__ == "__main__":
     np.random.seed(args.seed)
     random.seed(args.seed)
     rng = jax.random.PRNGKey(args.seed)
-    rng, init_rng = jax.random.split(rng)
+    key, actor_key, critic_key, action_key, permutation_key = jax.random.split(
+        rng, num=5
+    )
 
     # agent
+    actor = Actor(act_dim=env.single_action_space.n)
+    critic = Critic()
+    actor.apply = jax.jit(actor.apply)
+    critic.apply = jax.jit(critic.apply)
+    actor_params = actor.init(actor_key, obs)
+    critic_params = critic.init(critic_key, obs)
 
-    # start
-    global_step = 0
     num_updates = args.global_timesteps // args.batch_size
 
     # annealing schedule and optimizer
@@ -389,6 +456,35 @@ if __name__ == "__main__":
         optimizer = optax.adam(lr_schedule, eps=1e-5)
     else:
         optimizer = optax.adam(args.lr, eps=1e-5)
+
+    # agent state
+    agent_state = AgentState.create(
+        params=AgentParams(actor_params=actor_params, critic_params=critic_params),
+        tx=optimizer,
+        apply_fn=None,
+        actor_fn=actor.apply,
+        critic_fn=critic.apply,
+    )
+
+    # Initialize the storage
+    storage = Storage(
+        obs=jnp.zeros(
+            (args.num_steps, args.num_envs) + envs.single_observation_space.shape
+        ),
+        actions=jnp.zeros(
+            (args.num_steps, args.num_envs) + envs.single_action_space.shape
+        ),
+        logprobs=jnp.zeros((args.num_steps, args.num_envs)),
+        dones=jnp.zeros((args.num_steps, args.num_envs)),
+        values=jnp.zeros((args.num_steps, args.num_envs)),
+        advantages=jnp.zeros((args.num_steps, args.num_envs)),
+        returns=jnp.zeros((args.num_steps, args.num_envs)),
+        rewards=jnp.zeros((args.num_steps, args.num_envs)),
+    )
+    global_step = 0
+    start_time = time.time()
+    next_obs, _ = envs.reset(seed=args.seed)
+    next_done = jnp.zeros(args.num_envs)
 
     # main loop
     for update in range(1, num_updates + 1):
