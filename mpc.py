@@ -26,17 +26,30 @@
 
 import os
 from functools import partial
+from typing import Any, Callable
 
+import chex
 import jax
 import jax.numpy as jnp
 from trajax import integrators
 from trajax.experimental.sqp import shootsqp, util
+
 from utils import nearest_point_on_trajectory
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-os.environ["JAX_ENABLE_X64"] = "true"
+jax.config.update("jax_enable_x64", True)
 
+Array = jax.Array
+PRNGKey = chex.PRNGKey
+PyTree = Any
+Scalar = chex.Scalar
+# f(t, x, u)
+Dynamics = Callable[[Scalar, PyTree, Array], PyTree]
+# c(t, x, u)
+StageCost = Callable[[Scalar, PyTree, Array], float]
+# c(t, x)
+TerminalCost = Callable[[Scalar, PyTree], float]
 
 class JaxMPC:
     # constants
@@ -78,6 +91,10 @@ class JaxMPC:
         return jnp.array(
             [x[3] * jnp.sin(x[2]), x[3] * jnp.cos(x[2]), x[3] * u[0], u[1]]
         )
+    
+    @staticmethod
+    def predict_motion(x, u, t):
+        pass
 
     # cost function
     # TODO: add intermediate costs
@@ -134,9 +151,6 @@ class JaxMPC:
         soln = self.solver.solve(state, u, last_traj)
         U, X = soln.primals
         return U, X
-    
-    def ref_traj(self, x, y, theta):
-        _, _, _, nearest_idx = nearest_point_on_trajectory(jnp.array([x, y]), self.waypoints)
 
     def plan(self, x, y, theta):
         pass
