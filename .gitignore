@@ -1,3 +1,8 @@
+.vscode/
+data/lut.npz
+runs/
+lut_allkappa.npz
+lut_nonflat.npz
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
