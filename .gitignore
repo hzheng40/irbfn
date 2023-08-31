@@ -3,6 +3,7 @@ data/lut.npz
 runs/
 lut_allkappa.npz
 lut_nonflat.npz
+wandb/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

@@ -30,8 +30,8 @@ import joblib
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--minx', type=float, default=1.0)
-parser.add_argument('--maxx', type=float, default=10.0)
+parser.add_argument('--minx', type=float, default=5.0)
+parser.add_argument('--maxx', type=float, default=30.0)
 parser.add_argument('--dx', type=float, default=0.1)
 parser.add_argument('--miny', type=float, default=-8.0)
 parser.add_argument('--maxy', type=float, default=8.0)

@@ -138,3 +138,102 @@ def nearest_point_on_trajectory(point, trajectory):
         t[min_dist_segment],
         min_dist_segment,
     )
+
+@jax.jit
+@chex.assert_max_traces(n=1)
+def intersect_point(point, radius, trajectory, t=0.0, wrap=False):
+    """
+    starts at beginning of trajectory, and find the first point one radius away from the given point along the trajectory.
+
+    Assumes that the first segment passes within a single radius of the point
+
+    http://codereview.stackexchange.com/questions/86421/line-segment-to-circle-collision-algorithm
+    """
+    start_i = int(t)
+    start_t = t % 1.0
+    first_t = None
+    first_i = None
+    first_p = None
+    trajectory = jnp.asarray(trajectory)
+    for i in range(start_i, trajectory.shape[0] - 1):
+        start = trajectory[i, :]
+        end = trajectory[i + 1, :] + 1e-6
+        V = jnp.asarray(end - start)
+
+        a = jnp.dot(V, V)
+        b = 2.0 * jnp.dot(V, start - point)
+        c = jnp.dot(start, start) + jnp.dot(point, point) - 2.0 * jnp.dot(start, point) - radius * radius
+        discriminant = b * b - 4 * a * c
+
+        if discriminant < 0:
+            continue
+
+        discriminant = jnp.sqrt(discriminant)
+        t1 = (-b - discriminant) / (2.0 * a)
+        t2 = (-b + discriminant) / (2.0 * a)
+        if i == start_i:
+            if t1 >= 0.0 and t1 <= 1.0 and t1 >= start_t:
+                first_t = t1
+                first_i = i
+                first_p = start + t1 * V
+                break
+            if t2 >= 0.0 and t2 <= 1.0 and t2 >= start_t:
+                first_t = t2
+                first_i = i
+                first_p = start + t2 * V
+                break
+        elif t1 >= 0.0 and t1 <= 1.0:
+            first_t = t1
+            first_i = i
+            first_p = start + t1 * V
+            break
+        elif t2 >= 0.0 and t2 <= 1.0:
+            first_t = t2
+            first_i = i
+            first_p = start + t2 * V
+            break
+    # wrap around to the beginning of the trajectory if no intersection is found1
+    if wrap and first_p is None:
+        for i in range(-1, start_i):
+            start = trajectory[i % trajectory.shape[0], :]
+            end = trajectory[(i + 1) % trajectory.shape[0], :] + 1e-6
+            V = end - start
+
+            a = jnp.dot(V, V)
+            b = 2.0 * jnp.dot(V, start - point)
+            c = jnp.dot(start, start) + jnp.dot(point, point) - 2.0 * jnp.dot(start, point) - radius * radius
+            discriminant = b * b - 4 * a * c
+
+            if discriminant < 0:
+                continue
+            discriminant = jnp.sqrt(discriminant)
+            t1 = (-b - discriminant) / (2.0 * a)
+            t2 = (-b + discriminant) / (2.0 * a)
+            if t1 >= 0.0 and t1 <= 1.0:
+                first_t = t1
+                first_i = i
+                first_p = start + t1 * V
+                break
+            elif t2 >= 0.0 and t2 <= 1.0:
+                first_t = t2
+                first_i = i
+                first_p = start + t2 * V
+                break
+
+    return first_p, first_i, first_t
+
+@jax.jit
+@chex.assert_max_traces(n=1)
+def zero_2_2pi(angle):
+    if angle > 2 * jnp.pi:
+        return angle - 2.0 * jnp.pi
+    if angle < 0:
+        return angle + 2.0 * jnp.pi
+
+    return angle
+
+@jax.jit
+@chex.assert_max_traces(n=1)
+def get_rotation_matrix(theta):
+    c, s = jnp.cos(theta), jnp.sin(theta)
+    return jnp.ascontiguousarray(jnp.array([[c, -s], [s, c]]))

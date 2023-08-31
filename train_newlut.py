@@ -27,14 +27,17 @@ import os
 from datetime import datetime
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 import flax.linen as nn
 import jax
 import jax.numpy as jnp
 import numpy as np
 import optax
-from torch.utils.tensorboard import SummaryWriter
+
+# from torch.utils.tensorboard import SummaryWriter
+import wandb
+
 from flax.training import train_state
 from tqdm import tqdm
 
@@ -56,7 +59,7 @@ from flax.core import freeze, unfreeze
 # tensorboard logging
 lr = 0.001
 batch_size = 2000
-numk = 100
+numk = 40
 
 # number of regions: 20x40x20=16000
 num_splitx = 11
@@ -168,6 +171,7 @@ optim = optax.adam(lr)
 # train state
 state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=optim)
 
+
 # train one step
 @jax.jit
 def train_step(state, x, y):
@@ -193,7 +197,7 @@ ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 train_work_dir = "./runs/{}_bs{}_lr{}_nk{}_{}x{}y{}t_{}_kernel_l2_allkappalut".format(
     ts, batch_size, lr, numk, num_splitx, num_splity, num_splitt, basis_func.__name__
 )
-writer = SummaryWriter(train_work_dir)
+# writer = SummaryWriter(train_work_dir)
 
 # config logging
 yaml_dir = "./configs/" + train_work_dir[7:] + ".yaml"
@@ -222,6 +226,12 @@ config_dict = {
 with open(yaml_dir, "w+") as outfile:
     yaml.dump(config_dict, outfile, default_flow_style=False)
 
+wandb.init(
+    project="irbfn",
+    config=config_dict,
+    notes="trained on actual car size LUT",
+)
+
 
 def train_epoch(train_state, train_x, train_y, bs, epoch, epoch_rng, summary_writer):
     # batching data
@@ -241,13 +251,15 @@ def train_epoch(train_state, train_x, train_y, bs, epoch, epoch_rng, summary_wri
         #     "Training Epoch: %d, batch: %d, batch loss: %.4f"
         #     % (epoch, b, jax.device_get(batch_loss))
         # )
-        summary_writer.add_scalar(
-            "train_loss_batch", jax.device_get(batch_loss), b + (epoch * len(perms))
-        )
+        # summary_writer.add_scalar(
+        #     "train_loss_batch", jax.device_get(batch_loss), b + (epoch * len(perms))
+        # )
+        wandb.log({"train_loss_batch": jax.device_get(batch_loss)})
     batch_losses_np = jax.device_get(batch_losses)
     # print("Training Epoch: %d, training loss: %.4f" % (epoch, np.mean(batch_losses_np)))
 
-    summary_writer.add_scalar("train_loss", np.mean(batch_losses_np), epoch)
+    # summary_writer.add_scalar("train_loss", np.mean(batch_losses_np), epoch)
+    wandb.log({"train_loss": np.mean(batch_losses_np)})
     return train_state
 
 
@@ -255,10 +267,12 @@ def train_epoch(train_state, train_x, train_y, bs, epoch, epoch_rng, summary_wri
 for e in tqdm(range(epochs)):
     rng, perm_rng = jax.random.split(rng)
     state = train_epoch(
-        state, flattened_idxlut, flattened_lut, batch_size, e, perm_rng, writer
+        state, flattened_idxlut, flattened_lut, batch_size, e, perm_rng, None
     )
 
 from flax.training import checkpoints
+import flax
+flax.config.update('flax_use_orbax_checkpointing', True)
 
 CKPT_DIR = "ckpts/" + train_work_dir[7:]
 import os
