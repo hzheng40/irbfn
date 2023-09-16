@@ -27,7 +27,7 @@
 import os
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import flax
 
@@ -37,28 +37,35 @@ import jax.numpy as jnp
 import numpy as np
 import argparse
 from flax.training import train_state, checkpoints
-from model import WCRBFNet
 from flax_rbf import *
 import optax
 import yaml
 from utils import integrate_path_mult, N
+import flax.linen as nn
 
+
+class MLP(nn.Module):
+    # num parameters 581
+    @nn.compact
+    def __call__(self, x):
+        # input shape 3
+        x = nn.Dense(features=64)(x)
+        x = nn.relu(x)
+        x = nn.Dense(features=5)(x)
+        # output shape 5
+        return x
 # %%
-# good candidate, 535 parameters, no endpoint loss, 800 epoch
-# config_f = "/home/irbfn/configs/20230907_161326_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1_allkappalut_doubleprecision.yaml"
-# ckpt = "/home/irbfn/ckpts/20230907_161326_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1_allkappalut_doubleprecision/checkpoint_0"
-
 # best one so far, 535 parameters, l2 endpoint loss, epoch 4000
-config_f = "/home/irbfn/configs/20230908_202442_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1+end100stepl2_allkappalut_doubleprecision.yaml"
-ckpt = "/home/irbfn/ckpts/20230908_202442_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1+end100stepl2_allkappalut_doubleprecision/checkpoint_0"
+# config_f = "/home/irbfn/configs/20230908_202442_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1+end100stepl2_allkappalut_doubleprecision.yaml"
+# ckpt = "/home/irbfn/ckpts/20230908_202442_bs20000_lr0.001_nk10_2x2y3t_inverse_quadratic_kernel_l1+end100stepl2_allkappalut_doubleprecision/checkpoint_0"
+
+# mlp, 581 parameters
+config_f = "/home/irbfn/configs/20230908_210405_bs20000_lr0.001_mlp_l1+end100stepl2_allkappalut_doubleprecision.yaml"
+ckpt = "/home/irbfn/ckpts/20230908_210405_bs20000_lr0.001_mlp_l1+end100stepl2_allkappalut_doubleprecision/checkpoint_0"
+
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
-
-# uncomment the following line (53) and line 206 to create memory profile, will slow down inference significantly
-# see https://jax.readthedocs.io/en/latest/profiling.html#programmatic-capture for how to inspect
-# jax.profiler.start_trace('./tensorboard_profiler')
-
 
 # pred one step
 @jax.jit
@@ -68,24 +75,13 @@ def pred_step(state, x):
 
 
 # load checkpoint
-wcrbf = WCRBFNet(
-    in_features=conf.in_features,
-    out_features=conf.out_features,
-    num_kernels=conf.num_kernels,
-    basis_func=eval(conf.basis_func),
-    num_regions=conf.num_regions,
-    lower_bounds=conf.lower_bounds,
-    upper_bounds=conf.upper_bounds,
-    dimension_ranges=conf.dimension_ranges,
-    activation_idx=conf.activation_idx,
-    delta=conf.delta,
-)
+mlp = MLP()
 
 rng = jax.random.PRNGKey(conf.seed)
 rng, init_rng = jax.random.split(rng)
-params = wcrbf.init(init_rng, jnp.ones((1, 3)))
+params = mlp.init(init_rng, jnp.ones((1, 3)))
 optim = optax.adam(conf.lr)
-state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=optim)
+state = train_state.TrainState.create(apply_fn=mlp.apply, params=params, tx=optim)
 # empty_state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=jax.tree_map(np.zeros_like, params['params']), tx=optim)
 restored_state = checkpoints.restore_checkpoint(ckpt_dir=ckpt, target=state)
 # %%
@@ -167,8 +163,8 @@ plt.xlabel("Y", labelpad=-2)
 plt.ylabel("X", labelpad=-10)
 plt.legend(loc="lower left")
 fig.tight_layout()
-plt.savefig("traj_out.pdf", format="pdf", bbox_inches="tight")
-plt.savefig("traj_out.png", format="png", bbox_inches="tight")
+plt.savefig("traj_out_mlp.pdf", format="pdf", bbox_inches="tight")
+plt.savefig("traj_out_mlp.png", format="png", bbox_inches="tight")
 # %%
 
 # num params

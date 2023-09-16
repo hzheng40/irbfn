@@ -25,6 +25,7 @@
 # Simple lattice-based planner using IRBFNs
 
 import os
+from typing import Type
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
@@ -55,9 +56,24 @@ from nuplan.planning.simulation.planner.abstract_planner import (
     PlannerInitialization,
     PlannerInput,
 )
-from nuplan.planning.simulation.observation.observation_type import DetectionsTracks
-from nuplan.planning.simulation.trajectory.interpolated_trajectory import InterpolatedTrajectory
+from nuplan.planning.simulation.observation.observation_type import (
+    DetectionsTracks,
+    Observation,
+)
+from nuplan.planning.simulation.trajectory.interpolated_trajectory import (
+    InterpolatedTrajectory,
+)
 from nuplan.planning.simulation.trajectory.abstract_trajectory import AbstractTrajectory
+from nuplan.common.actor_state.ego_state import DynamicCarState, EgoState
+from nuplan.common.actor_state.state_representation import (
+    StateSE2,
+    StateVector2D,
+    TimePoint,
+)
+from nuplan.common.actor_state.vehicle_parameters import (
+    get_pacifica_parameters,
+    VehicleParameters,
+)
 
 config_f = "/home/irbfn/configs/20230414_170913_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_allkappalut.yaml"
 ckpt = "/home/irbfn/ckpts/20230414_170913_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_allkappalut/checkpoint_0"
@@ -114,7 +130,7 @@ def sample_lookahead_square(
     widths=np.linspace(-1.5, 1.5, num=11),
 ):
     """
-    General1 function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
+    General function to sample goal points. In this example it samples a rectangular grid around a look-ahead point.
 
     Args:
         pose_x ():
@@ -179,7 +195,6 @@ class Planner(AbstractPlanner):
         conf.num_t = 5
 
         # load policy model
-        
 
         # load irbfn model
         self.wcrbf = WCRBFNet(
@@ -212,6 +227,21 @@ class Planner(AbstractPlanner):
         )
         _ = integrate_path_mult(pred_step(self.model_state, grid))
 
-    def plan(self, x, y, theta):
+    def initialize(self, initialization: PlannerInitialization) -> None:
+        """Inherited"""
+        return super().initialize(initialization)
+
+    def name(self) -> str:
+        """Inherited"""
+        return self.__class__.__name__
+
+    def observation_type(self) -> type[Observation]:
+        """Inherited"""
+        return DetectionsTracks
+
+    def compute_planner_trajectory(
+        self, current_input: PlannerInput
+    ) -> AbstractTrajectory:
+        """Plan trajectory based on detections"""
         y_pred = pred_step(self.model_state, self.grid)
         all_states = integrate_path_mult(y_pred)

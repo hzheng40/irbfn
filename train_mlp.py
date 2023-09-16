@@ -35,22 +35,11 @@ import jax.numpy as jnp
 import numpy as np
 import optax
 
-# from torch.utils.tensorboard import SummaryWriter
 import wandb
 
 from flax.training import train_state
 from tqdm import tqdm
 
-from flax_rbf import (
-    gaussian,
-    inverse_quadratic,
-    inverse_multiquadric,
-    quadratic,
-    multiquadric,
-    gaussian_wide,
-    gaussian_wider,
-)
-from model import WCRBFNet
 from utils import integrate_path_mult
 
 import yaml
@@ -59,18 +48,24 @@ from flax.core import freeze, unfreeze
 
 jax.config.update("jax_enable_x64", True)
 
+
+class MLP(nn.Module):
+    # num parameters 581
+    @nn.compact
+    def __call__(self, x):
+        # input shape 3
+        x = nn.Dense(features=64)(x)
+        x = nn.relu(x)
+        x = nn.Dense(features=5)(x)
+        # output shape 5
+        return x
+
+
 epochs = 4000
 
 # tensorboard logging
 lr = 0.001
 batch_size = 20000
-numk = 10
-
-# number of regions: 20x40x20=16000
-num_splitx = 2
-num_splity = 2
-num_splitt = 3
-num_overlap = 1
 
 # loading raw data
 data = np.load("lut_allkappa.npz")
@@ -78,47 +73,6 @@ lut = jnp.array(data["lut"])
 xlut = data["xlut"]
 ylut = data["ylut"]
 tlut = data["tlut"]
-
-# stride tricks
-ast = np.lib.stride_tricks.as_strided
-# strides should be the same for all dimension indices
-# stride on x
-lut_strides = xlut.strides
-num_points_in_splitx = int(xlut.shape[0] / num_splitx + 1)
-xlut_strided = ast(
-    xlut,
-    shape=(num_splitx, num_points_in_splitx),
-    strides=(lut_strides[0] * (num_points_in_splitx - num_overlap), lut_strides[0]),
-).flatten()
-# lowers and uppers on x
-ux, cx = np.unique(xlut_strided, return_counts=True)
-lowers_x = [xlut_strided[0], *(ux[cx > 1])]
-uppers_x = [*(ux[cx > 1]), xlut_strided[-1]]
-
-# stride on y
-num_points_in_splity = int(ylut.shape[0] / num_splity + 1)
-ylut_strided = ast(
-    ylut,
-    shape=(num_splity, num_points_in_splity),
-    strides=(lut_strides[0] * (num_points_in_splity - num_overlap), lut_strides[0]),
-).flatten()
-# lowers and uppers on y
-uy, cy = np.unique(ylut_strided, return_counts=True)
-lowers_y = [ylut_strided[0], *(uy[cy > 1])]
-uppers_y = [*(uy[cy > 1]), ylut_strided[-1]]
-
-# stride on theta
-num_points_in_splitt = int(tlut.shape[0] / num_splitt + 1)
-tlut_strided = ast(
-    tlut,
-    shape=(num_splitt, num_points_in_splitt),
-    strides=(lut_strides[0] * (num_points_in_splitt - num_overlap), lut_strides[0]),
-).flatten()
-# lowers and uppers on y
-ut, ct = np.unique(tlut_strided, return_counts=True)
-lowers_t = [tlut_strided[0], *(ut[ct > 1])]
-uppers_t = [*(ut[ct > 1]), tlut_strided[-1]]
-
 
 xlutm, ylutm, tlutm = jnp.meshgrid(xlut, ylut, tlut, indexing="ij")
 idxlut = jnp.stack((xlutm, ylutm, tlutm), axis=-1)
@@ -134,57 +88,32 @@ flattened_idxlut = idxlut.reshape((-1, 3))
 # out_features: (k0, k1, k2, k3, s)
 in_features = 3
 out_features = 5
-# num_kernels = 20
-num_regions = num_splitx * num_splity * num_splitt
-lower_bounds = [lowers_x, lowers_y, lowers_t]
-uppers_bounds = [uppers_x, uppers_y, uppers_t]
-activation_idx = [0, 1, 2]
-delta = [15.0, 15.0, 100.0]
-basis_func = inverse_quadratic
-# basis_func = inverse_multiquadric
+
 seed = 0
-bound_ranges = [np.arange(len(curr_bounds)) for curr_bounds in lower_bounds]
-dimension_ranges = (
-    np.stack(np.meshgrid(*bound_ranges, indexing="ij"), axis=-1)
-    .reshape(-1, len(bound_ranges))
-    .tolist()
-)
 
 # rng
 rng = jax.random.PRNGKey(seed)
 rng, init_rng = jax.random.split(rng)
 
 # model init
-wcrbf = WCRBFNet(
-    in_features=in_features,
-    out_features=out_features,
-    num_kernels=numk,
-    basis_func=basis_func,
-    num_regions=num_regions,
-    lower_bounds=lower_bounds,
-    upper_bounds=uppers_bounds,
-    dimension_ranges=dimension_ranges,
-    activation_idx=activation_idx,
-    delta=delta,
-)
-params = wcrbf.init(init_rng, jnp.ones((batch_size, 3)))
+mlp = MLP()
+
+params = mlp.init(init_rng, jnp.ones((batch_size, 3)))
 params_shape = jax.tree_util.tree_map(jnp.shape, unfreeze(params))
 print("Initialized parameter shapes:\n", params_shape)
 
 # optimizer
-# lr_schedule = optax.exponential_decay(lr, 50000, 0.001)
-# optim = optax.adam(lr_schedule)
 optim = optax.adam(lr)
 
 # train state
-state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=optim)
+state = train_state.TrainState.create(apply_fn=mlp.apply, params=params, tx=optim)
 
 
 # train one step
 @jax.jit
 def train_step(state, x, y):
     def loss_fn(params):
-        y_pred = wcrbf.apply(params, x)
+        y_pred = mlp.apply(params, x)
         # loss on polynomial parameters
         # loss = optax.l2_loss(predictions=y_pred, targets=y).mean()
         # loss = optax.huber_loss(predictions=y_pred, targets=y).mean()
@@ -210,10 +139,9 @@ num_points = flattened_lut.shape[0]
 # batch_size = 50000
 
 ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-train_work_dir = "./runs/{}_bs{}_lr{}_nk{}_{}x{}y{}t_{}_kernel_l1+end100stepl2_allkappalut_doubleprecision".format(
-    ts, batch_size, lr, numk, num_splitx, num_splity, num_splitt, basis_func.__name__
+train_work_dir = "./runs/{}_bs{}_lr{}_mlp_l1+end100stepl2_allkappalut_doubleprecision".format(
+    ts, batch_size, lr,
 )
-# writer = SummaryWriter(train_work_dir)
 
 # config logging
 yaml_dir = "./configs/" + train_work_dir[7:] + ".yaml"
@@ -222,17 +150,17 @@ yaml_dir = "./configs/" + train_work_dir[7:] + ".yaml"
 config_dict = {
     "in_features": in_features,
     "out_features": out_features,
-    "num_kernels": numk,
-    "basis_func": basis_func.__name__,
-    "num_splitx": num_splitx,
-    "num_splity": num_splity,
-    "num_splitt": num_splitt,
-    "num_regions": num_regions,
-    "lower_bounds": [[float(l) for l in ll] for ll in lower_bounds],
-    "upper_bounds": [[float(u) for u in uu] for uu in uppers_bounds],
-    "dimension_ranges": dimension_ranges,
-    "activation_idx": activation_idx,
-    "delta": delta,
+    "num_kernels": None,
+    "basis_func": "MLP",
+    "num_splitx": None,
+    "num_splity": None,
+    "num_splitt": None,
+    "num_regions": None,
+    "lower_bounds": None,
+    "upper_bounds": None,
+    "dimension_ranges": None,
+    "activation_idx": None,
+    "delta": None,
     "epochs": epochs,
     "lr": lr,
     "batch_size": batch_size,
@@ -245,7 +173,7 @@ with open(yaml_dir, "w+") as outfile:
 wandb.init(
     project="irbfn",
     config=config_dict,
-    notes="trained on actual car size LUT, L1 loss, endpoint loss, double precision",
+    notes="trained on actual car size LUT, L1 loss, endpoint loss, double precision, MLP baseline",
 )
 
 
@@ -263,18 +191,10 @@ def train_epoch(train_state, train_x, train_y, bs, epoch, epoch_rng, summary_wri
         batch_y = train_y[perm, :]
         train_state, batch_loss = train_step(train_state, batch_x, batch_y)
         batch_losses.append(batch_loss)
-        # print(
-        #     "Training Epoch: %d, batch: %d, batch loss: %.4f"
-        #     % (epoch, b, jax.device_get(batch_loss))
-        # )
-        # summary_writer.add_scalar(
-        #     "train_loss_batch", jax.device_get(batch_loss), b + (epoch * len(perms))
-        # )
+
         wandb.log({"train_loss_batch": jax.device_get(batch_loss)})
     batch_losses_np = jax.device_get(batch_losses)
-    # print("Training Epoch: %d, training loss: %.4f" % (epoch, np.mean(batch_losses_np)))
 
-    # summary_writer.add_scalar("train_loss", np.mean(batch_losses_np), epoch)
     wandb.log({"train_loss": np.mean(batch_losses_np)})
     return train_state
 
