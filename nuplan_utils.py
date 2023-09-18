@@ -11,7 +11,14 @@ from nuplan.common.actor_state.state_representation import Point2D, StateSE2
 from nuplan.common.actor_state.tracked_objects_types import TrackedObjectType
 from nuplan.common.maps.abstract_map import AbstractMap
 from nuplan.planning.scenario_builder.abstract_scenario import AbstractScenario
-from nuplan.planning.simulation.observation.observation_type import DetectionsTracks
+from nuplan.planning.simulation.observation.observation_type import (
+    DetectionsTracks,
+    Observation,
+)
+from nuplan.planning.simulation.planner.abstract_planner import (
+    PlannerInitialization,
+    PlannerInput,
+)
 from nuplan.planning.simulation.trajectory.trajectory_sampling import TrajectorySampling
 from nuplan.planning.training.preprocessing.feature_builders.raster_feature_builder import (
     RasterFeatureBuilder,
@@ -158,6 +165,32 @@ class RasterFeatureBuilderAllTrace(RasterFeatureBuilder):
         self.vehicle_types = vehicle_types
         self.road_user_types = road_user_types
 
+    def get_features_from_simulation(
+        self, current_input: PlannerInput, initialization: PlannerInitialization
+    ) -> Raster:
+        """Inherited, get all states instead of initial state"""
+        history = current_input.history
+        ego_states = history.ego_states
+        observations = history.observations
+        agent_vehicle_states = self._get_agent_traces_from_observations(
+            observations, self.vehicle_types
+        )
+        agent_road_user_states = self._get_agent_traces_from_observations(
+            observations, self.road_user_types
+        )
+
+        if isinstance(observations, List[DetectionsTracks]):
+            return self._compute_feature(
+                ego_states,
+                agent_vehicle_states,
+                agent_road_user_states,
+                initialization.map_api,
+            )
+        else:
+            raise TypeError(
+                f"Observation was type {observations[0].detection_type()}. Expected DetectionsTracks"
+            )
+
     def get_features_from_scenario(self, scenario: AbstractScenario) -> Raster:
         """Inherited, get all states instead of initial state"""
         ego_states = self._get_ego_traces(scenario)
@@ -275,5 +308,19 @@ class RasterFeatureBuilderAllTrace(RasterFeatureBuilder):
                 scenario.get_tracked_objects_at_iteration(
                     i
                 ).tracked_objects.get_tracked_objects_of_types(object_types)
+            )
+        return agent_traces
+
+    def _get_agent_traces_from_observations(
+        self,
+        observations: List[Observation],
+        object_types: List[TrackedObjectType],
+    ) -> List[List[Agent]]:
+        """Get all traces of agents in scenario by type"""
+        agent_traces = []
+
+        for i in range(len(observations)):
+            agent_traces.append(
+                observations[i].get_tracked_objects_of_types(object_types)
             )
         return agent_traces

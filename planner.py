@@ -75,6 +75,8 @@ from nuplan.common.actor_state.vehicle_parameters import (
     VehicleParameters,
 )
 
+from observation import ObservationWrapper
+
 config_f = "/home/irbfn/configs/20230414_170913_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_allkappalut.yaml"
 ckpt = "/home/irbfn/ckpts/20230414_170913_bs2000_lr0.001_nk100_11x10y8t_inverse_quadratic_kernel_l2_allkappalut/checkpoint_0"
 with open(config_f, "r") as f:
@@ -229,8 +231,16 @@ class Planner(AbstractPlanner):
 
     def initialize(self, initialization: PlannerInitialization) -> None:
         """Inherited"""
-        return super().initialize(initialization)
+        self.observation_wrapper = ObservationWrapper()
 
+    def _init_policy(self) -> None:
+        """Initialize planning policy"""
+        pass
+
+    def _init_irbfn(self) -> None:
+        """Initialize trajectory generator"""
+        pass
+        
     def name(self) -> str:
         """Inherited"""
         return self.__class__.__name__
