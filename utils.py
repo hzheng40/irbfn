@@ -30,7 +30,7 @@ import numpy as np
 import chex
 from functools import partial
 
-N = 100
+N = 9
 
 PARAM_MAT = jnp.array(
     [

@@ -102,7 +102,7 @@ class WCRBFNet(nn.Module):
         num_regions (int): number of regions used
         region_bounds (Sequence[Sequence[float]]): upper and lower bounds of the regions
         split_indices: (Sequence[int]): indices of the input vector that is split into regions
-        delta (float): scaling factor for region indicatorr function
+        delta (float): scaling factor for region indicator function
     """
 
     in_features: int
