@@ -27,5 +27,6 @@ python3 evaluate.py
 
 ## Re-run training
 
+0. Download MPC training dataset [here](https://drive.google.com/drive/folders/1HDQd98mROi-Q9-fZaqFCEmLYFrXJdccl?usp=drive_link)
 1. Download training dataset. See instructions [here](data/download_data.md).
 2. Run train script `python3 train.py`. Updated config and checkpoint files should be saved to `ckpts/` and `configs/`.
