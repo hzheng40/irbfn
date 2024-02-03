@@ -1,0 +1,7 @@
+-f https://storage.googleapis.com/jax-releases/jax_cuda_releases.html
+jax[cuda]
+chex
+flax
+optax
+matplotlib==3.6.0
+scipy==1.8.1
