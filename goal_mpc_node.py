@@ -12,6 +12,11 @@ from scipy.spatial.transform import Rotation
 import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 from tqdm import tqdm
+from cvxpygen import cpg
+
+# # [AA] Uncomment these lines to use the generated CVXPYGEN solver
+# # import extension module and register custom CVXPY solve method
+# from kinematic_MPC.cpg_solver import cpg_solve
 
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -116,11 +121,11 @@ class MPC():
         constraints = []  # Create constraints array
 
         # Initialize reference vectors
-        self.x0k = cvxpy.Parameter((self.config.NXK,))
+        self.x0k = cvxpy.Parameter((self.config.NXK,), name="x0")
         self.x0k.value = np.zeros((self.config.NXK,))
 
         # Initialize reference trajectory parameter
-        self.ref_state = cvxpy.Parameter((self.config.NXK, 1))
+        self.ref_state = cvxpy.Parameter((self.config.NXK, 1), name="xG")
         self.ref_state.value = np.zeros((self.config.NXK, 1))
 
         # # reference trajectory speed maximum
@@ -173,7 +178,7 @@ class MPC():
         # [AA] Sparse matrix to CVX parameter for proper stuffing
         # Reference: https://github.com/cvxpy/cvxpy/issues/1159#issuecomment-718925710
         m, n = A_block.shape
-        self.Annz_k = cvxpy.Parameter(A_block.nnz)
+        self.Annz_k = cvxpy.Parameter(A_block.nnz, name="A")
         data = np.ones(self.Annz_k.size)
         rows = A_block.row * n + A_block.col
         cols = np.arange(self.Annz_k.size)
@@ -187,7 +192,7 @@ class MPC():
 
         # Same as A
         m, n = B_block.shape
-        self.Bnnz_k = cvxpy.Parameter(B_block.nnz)
+        self.Bnnz_k = cvxpy.Parameter(B_block.nnz, name="B")
         data = np.ones(self.Bnnz_k.size)
         rows = B_block.row * n + B_block.col
         cols = np.arange(self.Bnnz_k.size)
@@ -196,7 +201,7 @@ class MPC():
         self.Bnnz_k.value = B_block.data
 
         # No need for sparse matrices for C as most values are parameters
-        self.Ck_ = cvxpy.Parameter(C_block.shape)
+        self.Ck_ = cvxpy.Parameter(C_block.shape, name="C")
         self.Ck_.value = C_block
 
         # -------------------------------------------------------------
@@ -244,6 +249,13 @@ class MPC():
         # Create the optimization problem in CVXPY and setup the workspace
         # Optimization goal: minimize the objective function
         self.MPC_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
+
+        # [AA] Uncomment these lines to generate C-solver in folder kinematic_MPC
+        # cpg.generate_code(self.MPC_prob, code_dir='kinematic_MPC', solver='OSQP', solver_opts={'warm_start': True})
+        # exit()
+
+        # [AA] Uncomment this line after generating and importing the C-solver
+        # self.MPC_prob.register_solve('cpg', cpg_solve)
 
     def get_model_matrix(self, v, phi, delta):
         """
@@ -308,9 +320,12 @@ class MPC():
         try:
             self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
 
+            # self.MPC_prob.solve(method='cpg', updated_params=["x0", "xG", "A", "B", "C"])
+
             if (
                 self.MPC_prob.status == cvxpy.OPTIMAL
                 or self.MPC_prob.status == cvxpy.OPTIMAL_INACCURATE
+                or self.MPC_prob.status == 'solved' # [AA] cvxpygen compatibility
             ):
                 ox = np.array(self.xk.value[0, :]).flatten()
                 oy = np.array(self.xk.value[1, :]).flatten()
