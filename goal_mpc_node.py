@@ -159,17 +159,16 @@ class MPC():
         A_block = []
         B_block = []
         C_block = []
-        # init path to zeros
-        path_predict = np.zeros((self.config.NXK, self.config.TK + 1))
-        for t in range(self.config.TK):
-            A, B, C = self.get_model_matrix(path_predict[2, t], path_predict[3, t], 0.0)
-            A_block.append(A)
-            B_block.append(B)
-            C_block.extend(C)
-
+        A, B, C = self.get_model_matrix(0, 0, 0.0)
+        # Easily convert to sparse matrix
+        A_block.append(A)
+        B_block.append(B)
+        C_block.extend(C)
+        
         A_block = block_diag(tuple(A_block))
         B_block = block_diag(tuple(B_block))
         C_block = np.array(C_block)
+        C_block = C_block.reshape(-1,1)
 
         # [AA] Sparse matrix to CVX parameter for proper stuffing
         # Reference: https://github.com/cvxpy/cvxpy/issues/1159#issuecomment-718925710
@@ -212,10 +211,10 @@ class MPC():
         #     This constraint should be based on a few variables:
         #     self.xk, self.Ak_, self.Bk_, self.uk, and self.Ck_
         constraints.append(
-            cvxpy.vec(self.xk[:, 1:])
-            == self.Ak_ @ cvxpy.vec(self.xk[:, :-1])
-            + self.Bk_ @ cvxpy.vec(self.uk)
-            + self.Ck_
+            self.xk[:, 1:] == 
+            self.Ak_ @ self.xk[:, :-1] + 
+            self.Bk_ @ self.uk + 
+            (self.Ck_)
         )
 
         # Constraint part 2:
@@ -240,8 +239,6 @@ class MPC():
 
         constraints.append(cvxpy.max(velocity) <= self.config.MAX_SPEED)  # type: ignore
         constraints.append(cvxpy.min(velocity) >= self.config.MIN_SPEED)  # type: ignore
-        # constraints.append(velocity <= self.ref_traj_v_max)  # type: ignore
-
         # -------------------------------------------------------------
 
         # Create the optimization problem in CVXPY and setup the workspace
@@ -283,28 +280,28 @@ class MPC():
 
         return A, B, C
 
-    def mpc_prob_solve(self, ref_state, path_predict, x0):
+    def mpc_prob_solve(self, goal_state, x0):
         self.x0k.value = x0
-        # self.ref_traj_v_max.value = ref_traj[2]
 
         A_block = []
         B_block = []
         C_block = []
-        for t in range(self.config.TK):
-            A, B, C = self.get_model_matrix(path_predict[2, t], path_predict[3, t], 0.0)
-            A_block.append(A)
-            B_block.append(B)
-            C_block.extend(C)
-
+        A, B, C = self.get_kinematic_model_matrix(
+            x0[2], x0[3], 0.0
+        )
+        A_block.append(A)
+        B_block.append(B)
+        C_block.extend(C)
         A_block = block_diag(tuple(A_block))
         B_block = block_diag(tuple(B_block))
         C_block = np.array(C_block)
+        C_block = C_block.reshape(-1,1)
 
         self.Annz_k.value = A_block.data
         self.Bnnz_k.value = B_block.data
         self.Ck_.value = C_block
 
-        self.ref_state.value = ref_state
+        self.ref_state.value = goal_state
 
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
