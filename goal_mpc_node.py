@@ -8,8 +8,6 @@ import numpy as np
 import numpy.typing as npt
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix
-from scipy.spatial.transform import Rotation
-import matplotlib.pyplot as plt
 from joblib import Parallel, delayed
 from tqdm import tqdm
 from cvxpygen import cpg
