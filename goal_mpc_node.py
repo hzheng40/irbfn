@@ -12,7 +12,7 @@ from cvxpygen import cpg
 
 # # [AA] Uncomment these lines to use the generated CVXPYGEN solver
 # # import extension module and register custom CVXPY solve method
-# from kinematic_MPC.cpg_solver import cpg_solve
+from kinematic_MPC.cpg_solver import cpg_solve
 
 
 @dataclass
@@ -44,7 +44,7 @@ class mpc_config:
     MAX_STEER: float = 0.4189  # maximum steering angle [rad]
     MAX_DSTEER: float = np.deg2rad(180.0)  # maximum steering speed [rad/s]
     MAX_SPEED: float = 10.0  # maximum speed [m/s]
-    MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
+    MIN_SPEED: float = -2.0  # minimum backward speed [m/s]
     MAX_ACCEL: float = 10.0  # maximum acceleration [m/ss]
 
 
@@ -246,7 +246,7 @@ class MPC():
         # exit()
 
         # [AA] Uncomment this line after generating and importing the C-solver
-        # self.MPC_prob.register_solve('cpg', cpg_solve)
+        self.MPC_prob.register_solve('cpg', cpg_solve)
 
     def get_model_matrix(self, v, phi, delta):
         """
@@ -289,7 +289,7 @@ class MPC():
         A_block = []
         B_block = []
         C_block = []
-        A, B, C = self.get_kinematic_model_matrix(
+        A, B, C = self.get_model_matrix(
             x0[2], x0[3], 0.0
         )
         A_block.append(A)
@@ -309,10 +309,11 @@ class MPC():
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
         try:
-            self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
+            # [JL] Comment out this line after generating and importing the C-solver
+            # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
 
-            # [AA] Uncomment this line after generating and importing the C-solver
-            # self.MPC_prob.solve(method='cpg', updated_params=["x0", "xG", "A", "B", "C"])
+            # [JL] Uncomment this line after generating and importing the C-solver
+            self.MPC_prob.solve(method='cpg', updated_params=["x0", "xG", "A", "B", "C"])
 
             if (
                 self.MPC_prob.status == cvxpy.OPTIMAL
@@ -351,10 +352,11 @@ class MPC():
         return mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v
 
 
+car_mpc = MPC()
 def solve_mpc(v_car, x_goal, y_goal, t_goal, v_goal):
     output = []
-    goal = [x_goal, y_goal, v_goal, t_goal]
-    solution = MPC().get_controls(goal, v_car)
+    goal = np.atleast_2d([x_goal, y_goal, v_goal, t_goal]).T
+    solution = car_mpc.get_controls(goal, v_car)
     if solution is None:
         return None
     speed, steer = solution
