@@ -7,8 +7,6 @@ import numpy as np
 import numpy.typing as npt
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix
-from joblib import Parallel, delayed
-from tqdm import tqdm
 from cvxpygen import cpg
 
 
@@ -77,7 +75,7 @@ class MPC():
         # initialize MPC problem
         self.mpc_prob_init()
 
-    def get_controls(self, ref_path, path_predict, v):
+    def get_controls(self, goal_state, v):
         # x0 = [vehicle_state.x, vehicle_state.y, vehicle_state.v, vehicle_state.yaw]
         x0 = [0.0, 0.0, v, 0.0]
 
@@ -88,8 +86,7 @@ class MPC():
             oy,
             oyaw,
             ov,
-            state_predict,
-        ) = self.linear_mpc_control(ref_path, path_predict, x0)
+        ) = self.linear_mpc_control(goal_state, x0)
 
         if ox is None or oy is None:
             return
@@ -314,6 +311,7 @@ class MPC():
         try:
             self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
 
+            # [AA] Uncomment this line after generating and importing the C-solver
             # self.MPC_prob.solve(method='cpg', updated_params=["x0", "xG", "A", "B", "C"])
 
             if (
@@ -336,11 +334,10 @@ class MPC():
         except cvxpy.error.SolverError:
             return None, None, None, None, None, None
 
-    def linear_mpc_control(self, goal_state, path_predict, x0):
+    def linear_mpc_control(self, goal_state, x0):
         """
         MPC control with updating operational point iteratively
-        :param goal_state: reference trajectory in T steps
-        :param path_predict: predicted vehicle motion for T steps
+        :param goal_state: target car state after T steps
         :param x0: initial state vector
         :param oa: acceleration of T steps of last time
         :param od: delta of T steps of last time
@@ -348,79 +345,22 @@ class MPC():
 
         # Run the MPC optimization: Create and solve the optimization problem
         mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v = self.mpc_prob_solve(
-            goal_state, path_predict, x0
+            goal_state, x0
         )
 
-        return mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v, path_predict
+        return mpc_a, mpc_delta, mpc_x, mpc_y, mpc_yaw, mpc_v
 
 
-def solve_mpc(start, goal, v_start, v_goal, path_predict, ref_path):
+def solve_mpc(v_car, x_goal, y_goal, t_goal, v_goal):
     output = []
-    car_mpc = MPC()
-    for v_start_i in v_start:
-        for v_goal_i in v_goal:
-            reference_path = np.insert(ref_path, 2, v_goal_i, axis=1).T
-            predicted_path = np.insert(path_predict, 2, v_start_i, axis=1).T
-
-            solution = car_mpc.get_controls(reference_path, predicted_path, v_start_i)
-            if solution is None:
-                continue
-
-            speed, steer = solution
-
-            output.append([start[1], start[2], v_start_i, goal[0], goal[1], goal[2], v_goal_i, speed, steer])
-
-    return np.array(output)
-
-
-def main(args=None):
-    jobs = 45
-
-    ref_data = np.load('reference_trajectory_table_lite.npz')
-    goals = ref_data['goals']
-    ref_states = ref_data['ref_states']
-    goal_lut = {tuple(goal): ref_state for goal, ref_state in tqdm(zip(goals, ref_states), total=len(goals))}
-
-    raw_data = np.load('raw_trajectory_table_lite.npz')
-    states = raw_data['states']
-    x_start, y_start, t_start = raw_data['x_start'], raw_data['y_start'], raw_data['t_start']
-    x_goal, y_goal, t_goal = raw_data['x_goal'], raw_data['y_goal'], raw_data['t_goal']
-    v_start, v_goal = raw_data['v_start'], raw_data['v_goal']
-
-    x_startm, y_startm, t_startm, x_goalm, y_goalm, t_goalm, = np.meshgrid(
-        x_start, y_start, t_start, x_goal, y_goal, t_goal, indexing='ij'
-    )
-
-    start = np.stack((x_startm, y_startm, t_startm), axis=-1)
-    start_flat = start.reshape((-1, 3))  # columns are x, y, theta
-
-    goal = np.stack((x_goalm, y_goalm, t_goalm), axis=-1)
-    goal_flat = goal.reshape((-1, 3))  # columns are x, y, theta
-
-    # 7 inputs: y_start, t_start, v_start, x_goal, y_goal, t_goal, v_goal
-    # 2 outputs: speed, steer
-    limit = 200000
-    start = 1400000
-    end = 1600000
-    max_end = len(states)
-    while end < max_end:
-        start += limit
-        end += limit
-        end = min(end, max_end)
-        print('Current Start:', start)
-        print('Current End', end)
-        table = Parallel(n_jobs=jobs)(
-            delayed(solve_mpc)(s_i, g_i, v_start, v_goal, goal_lut[tuple(g_i)][:, :3], r_i[:, :3])
-            for s_i, g_i, r_i in tqdm(zip(start_flat[start:end], goal_flat[start:end], states[start:end]), total=len(states[start:end]))
-        )
-        table = np.concatenate(table)
-
-        np.savez(
-            f'explicit_mpc_table_{start}_{end}.npz',
-            table=table
-        )
+    goal = [x_goal, y_goal, v_goal, t_goal]
+    solution = MPC().get_controls(goal, v_car)
+    if solution is None:
+        return None
+    speed, steer = solution
+    return np.array([v_car, x_goal, y_goal, t_goal, v_goal, speed, steer])
 
 
 if __name__ == "__main__":
-    main()
+    MPC()
 
