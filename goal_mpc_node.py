@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import os
 import math
 from dataclasses import dataclass, field
 
@@ -12,13 +11,10 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from cvxpygen import cpg
 
+
 # # [AA] Uncomment these lines to use the generated CVXPYGEN solver
 # # import extension module and register custom CVXPY solve method
 # from kinematic_MPC.cpg_solver import cpg_solve
-
-
-os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 
 @dataclass
