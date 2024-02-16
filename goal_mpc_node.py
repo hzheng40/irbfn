@@ -354,7 +354,6 @@ class MPC():
 
 car_mpc = MPC()
 def solve_mpc(v_car, x_goal, y_goal, t_goal, v_goal):
-    output = []
     goal = np.atleast_2d([x_goal, y_goal, v_goal, t_goal]).T
     solution = car_mpc.get_controls(goal, v_car)
     if solution is None:
@@ -364,5 +363,5 @@ def solve_mpc(v_car, x_goal, y_goal, t_goal, v_goal):
 
 
 if __name__ == "__main__":
-    MPC()
+    print(solve_mpc(1.5, 3.0, 0.0, 0.0, 6.0))
 
