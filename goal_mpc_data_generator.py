@@ -1,7 +1,7 @@
 import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
-from goal_mpc_node import solve_mpc
+from goal_mpc_node import MPC, mpc_solution_generator
 
 
 ## input state mesh grid parameters [>1.1 billion]
@@ -49,38 +49,22 @@ def main(args=None):
     y_goal = y_goal_m.flatten()
     t_goal = t_goal_m.flatten()
     v_goal = v_goal_m.flatten()
-    print('Input state mesh grid generation completed:', len(v_car))
+    print('Input state mesh grid generation completed:', len(v_car), 'samples')
 
-    # generate MPC lookup table
-    # print('Importing previous checkpoint')
-    # full_table = np.load('goal_mpc_lookup_table.npz')['table']
-    # print('Checkpoint import completed')
-    # print(len(v_car))
-    # print(full_table.shape)
-    # interval = 100000000
-    # start = 0
-    # end = interval
-    # while start < len(v_car):
-    #     table = Parallel(n_jobs=n_jobs)(
-    #         delayed(solve_mpc)(vc_i, xg_i, yg_i, tg_i, vg_i)
-    #         for vc_i, xg_i, yg_i, tg_i, vg_i in tqdm(zip(v_car[start:end], x_goal[start:end], y_goal[start:end], t_goal[start:end], v_goal[start:end]), total=end-start)
-    #     )
-    #     table = np.array(list(filter(lambda item: item is not None, table)))
-    #     if full_table is None:
-    #         full_table = table
-    #     else:
-    #         full_table = np.concatenate((full_table, table), axis=0)
-    #     np.savez(f'goal_mpc_lookup_table_{end}.npz', table=full_table)
-    #     start += interval
-    #     end = min(end + interval, len(v_car))
-    # np.savez('goal_mpc_lookup_table.npz', table=full_table)
-    start = 0
-    end = len(v_car)
+    v_car_split = np.array_split(v_car, n_jobs)
+    x_goal_split = np.array_split(x_goal, n_jobs)
+    y_goal_split = np.array_split(y_goal, n_jobs)
+    t_goal_split = np.array_split(t_goal, n_jobs)
+    v_goal_split = np.array_split(v_goal, n_jobs)
+
+    mpc_list = [MPC() for _ in range(n_jobs)]
+
     table = Parallel(n_jobs=n_jobs)(
-        delayed(solve_mpc)(vc_i, xg_i, yg_i, tg_i, vg_i)
-        for vc_i, xg_i, yg_i, tg_i, vg_i in tqdm(zip(v_car[start:end], x_goal[start:end], y_goal[start:end], t_goal[start:end], v_goal[start:end]), total=end-start)
+        delayed(mpc_solution_generator)(vc, xg, yg, tg, vg, mpc)
+        for vc, xg, yg, tg, vg, mpc in tqdm(zip(v_car_split, x_goal_split, y_goal_split, t_goal_split, v_goal_split, mpc_list), total=n_jobs)
     )
-    table = np.array(list(filter(lambda item: item is not None, table)))
+    table = np.concatenate(table, axis=0)
+
     np.savez(f'goal_mpc_lookup_table_tiny_2.npz', table=table)
     print('Final shape:', table.shape)
     print('Done')

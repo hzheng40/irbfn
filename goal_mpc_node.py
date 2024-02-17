@@ -362,6 +362,18 @@ def solve_mpc(v_car, x_goal, y_goal, t_goal, v_goal):
     return np.array([v_car, x_goal, y_goal, t_goal, v_goal, speed, steer])
 
 
+def mpc_solution_generator(v_car, x_goal, y_goal, t_goal, v_goal, mpc):
+    solutions = []
+    for vc, xg, yg, tg, vg in zip(v_car, x_goal, y_goal, t_goal, v_goal):
+        goal = np.atleast_2d([xg, yg, vg, tg]).T
+        solution = mpc.get_controls(goal, vc)
+        if solution is None:
+            continue
+        speed, steer = solution
+        solutions.append(np.array([vc, xg, yg, tg, vg, speed, steer]))
+    return np.array(solutions)
+
+
 if __name__ == "__main__":
-    print(solve_mpc(1.5, 3.0, 0.0, 0.0, 6.0))
+    print(solve_mpc(-1.0, -1.2, 0.0, -3.14, 1))
 
