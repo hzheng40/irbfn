@@ -44,8 +44,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 flax.config.update('flax_use_orbax_checkpointing', False)
 
-config_f = "configs/goal_mpc_20240214_043527.yaml"
-ckpt = "ckpts/goal_mpc_20240214_043527/checkpoint_0"
+config_f = "configs/goal_mpc_4_region_l1_split_y_t.yaml"
+ckpt = "ckpts/goal_mpc_4_region_l1_split_y_t/checkpoint_0"
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
@@ -84,7 +84,7 @@ state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=op
 restored_state = checkpoints.restore_checkpoint(ckpt_dir=ckpt, target=state)
 
 print('Importing data...')
-data = np.load(f'goal_mpc_lookup_table_tiny.npz')
+data = np.load(f'goal_mpc_lookup_table_tiny_2.npz')
 table = data['table']
 v_s = table[:, 0].flatten()
 x_g = table[:, 1].flatten()
@@ -104,6 +104,8 @@ steer = np.concatenate((steer, -steer))
 
 flattened_input = np.vstack([v_s, x_g, y_g, t_g, v_g]).T
 flattened_output = np.vstack([speed, steer]).T
+flattened_input = flattened_input[:len(v_s) // 2]
+flattened_output = flattened_output[:len(v_s) // 2]
 
 # predictions
 # inputs = [arr.reshape(1, 75 for arr in flattened_input[:1000]]
