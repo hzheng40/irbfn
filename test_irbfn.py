@@ -20,8 +20,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 flax.config.update('flax_use_orbax_checkpointing', False)
 
-config_f = "configs/goal_mpc_20240214_043527.yaml"
-ckpt = "ckpts/goal_mpc_20240214_043527/checkpoint_0"
+config_f = "configs/goal_mpc_1_region_l2.yaml"
+ckpt = "ckpts/goal_mpc_1_region_l2/checkpoint_0"
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
