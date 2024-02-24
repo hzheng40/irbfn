@@ -375,5 +375,12 @@ def mpc_solution_generator(v_car, x_goal, y_goal, t_goal, v_goal, mpc):
 
 
 if __name__ == "__main__":
-    print(solve_mpc(-1.0, -1.2, 0.0, -3.14, 1))
+    v_car = 0.247
+    x_goal = 0.047
+    y_goal = -0.986
+    t_goal = -0.356
+    v_goal = 2.0
+    goal = np.atleast_2d([x_goal, y_goal, v_goal, t_goal]).T
+    print(v_car, *goal)
+    print(MPC().get_controls(goal, v_car))
 
