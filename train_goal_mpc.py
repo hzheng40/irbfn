@@ -65,13 +65,13 @@ numk = 100
 # number of regions: 3x3x4x4x3 = 432
 num_split_v_car = 1
 num_split_x_g = 1
-num_split_y_g = 2
-num_split_t_g = 2
+num_split_y_g = 1
+num_split_t_g = 1
 num_split_v_g = 1
 
 # loading raw data
 print('Loading data...')
-table = np.load('goal_mpc_lookup_table_tiny_2.npz')['table']
+table = np.load('goal_mpc_lookup_table_tiny_2_normalized.npz')['table']
 v_car = table[:, 0].flatten()
 x_goal = table[:, 1].flatten()
 y_goal = table[:, 2].flatten()
@@ -81,15 +81,15 @@ speed = table[:, 5].flatten()
 steer = table[:, 6].flatten()
 print('Data import completed')
 
-print('Mirroring data...')
-v_car_m = np.concatenate((v_car, v_car))
-x_goal_m = np.concatenate((x_goal, x_goal))
-y_goal_m = np.concatenate((y_goal, -y_goal))
-t_goal_m = np.concatenate((t_goal, -t_goal))
-v_goal_m = np.concatenate((v_goal, v_goal))
-speed_m = np.concatenate((speed, speed))
-steer_m = np.concatenate((steer, -steer))
-print('Mirroring completed')
+# print('Mirroring data...')
+# v_car_m = np.concatenate((v_car, v_car))
+# x_goal_m = np.concatenate((x_goal, x_goal))
+# y_goal_m = np.concatenate((y_goal, -y_goal))
+# t_goal_m = np.concatenate((t_goal, -t_goal))
+# v_goal_m = np.concatenate((v_goal, v_goal))
+# speed_m = np.concatenate((speed, speed))
+# steer_m = np.concatenate((steer, -steer))
+# print('Mirroring completed')
 
 print('Generating bounds...')
 # v_car_bounds = np.linspace(-1.0, 8.4, num=num_split_v_car+1).tolist()
@@ -97,11 +97,11 @@ print('Generating bounds...')
 # y_g_bounds = np.linspace(-4.1, 4.1, num=num_split_y_g+1).tolist()
 # t_g_bounds = np.linspace(-3.3, 3.3, num=num_split_t_g+1).tolist()
 # v_g_bounds = np.linspace(-1.0, 8.4, num=num_split_v_g+1).tolist()
-v_car_bounds = [-1.0, 8.5]
-x_g_bounds = [-1.2, 4.1]
-y_g_bounds = [-4.1, 0, 4.1]
-t_g_bounds = [-3.3, 0, 3.3]
-v_g_bounds = [-1.0, 8.5]
+v_car_bounds = [0.0, 1.0]
+x_g_bounds = [0.0, 1.0]
+y_g_bounds = [0.0, 1.0]
+t_g_bounds = [0.0, 1.0]
+v_g_bounds = [0.0, 1.0]
 print('Bounds defined')
 
 # lowers_y_s, uppers_y_s = [min(y_s)], [max(y_s)]
@@ -125,20 +125,20 @@ print('Bounds defined')
 # lowers_v_g, uppers_v_g = [min(v_g)], [max(v_g)]
 
 print('Generating input and output...')
-flattened_input = np.vstack([v_car_m, x_goal_m, y_goal_m, t_goal_m, v_goal_m]).T
-flattened_output = np.vstack([speed_m, steer_m]).T
+flattened_input = np.vstack([v_car, x_goal, y_goal, t_goal, v_goal]).T
+flattened_output = np.vstack([speed, steer]).T
 print('Data processing done')
 
 # model parameters
 in_features = flattened_input.shape[1]
 out_features = flattened_output.shape[1]
 num_regions = num_split_v_car * num_split_x_g * num_split_y_g * num_split_t_g * num_split_v_g
-# lower_bounds = [v_car_bounds[:-1], x_g_bounds[:-1], y_g_bounds[:-1], t_g_bounds[:-1], v_g_bounds[:-1]]
-# upper_bounds = [v_car_bounds[1:], x_g_bounds[1:], y_g_bounds[1:], t_g_bounds[1:], v_g_bounds[1:]]
-lower_bounds = [v_car_bounds[:-1], x_g_bounds[:-1], [-4.1, -0.2], [-3.3, -0.2], v_g_bounds[:-1]]
-upper_bounds = [v_car_bounds[1:], x_g_bounds[1:], [0.2, 4.1], [0.2, 3.3], v_g_bounds[1:]]
+lower_bounds = [v_car_bounds[:-1], x_g_bounds[:-1], y_g_bounds[:-1], t_g_bounds[:-1], v_g_bounds[:-1]]
+upper_bounds = [v_car_bounds[1:], x_g_bounds[1:], y_g_bounds[1:], t_g_bounds[1:], v_g_bounds[1:]]
+# lower_bounds = [v_car_bounds[:-1], x_g_bounds[:-1], [-4.1, -0.2], [-3.3, -0.2], v_g_bounds[:-1]]
+# upper_bounds = [v_car_bounds[1:], x_g_bounds[1:], [0.2, 4.1], [0.2, 3.3], v_g_bounds[1:]]
 activation_idx = [0, 1, 2, 3, 4]
-delta = [15.0, 30.0, 30.0, 100.0, 15.0]
+delta = [15.0, 15.0, 15.0, 15.0, 15.0]
 basis_function = inverse_quadratic
 seed = 0
 bound_ranges = [np.arange(len(curr_bounds)) for curr_bounds in lower_bounds]
@@ -187,7 +187,7 @@ def train_step(state, x, y):
         y_pred = wcrbf.apply(params, x)
         chex.assert_type([y_pred], float)
         chex.assert_equal_shape((y_pred, y))
-        loss = (jnp.abs(y_pred[:, 0] - y[:, 0]) + 20 * jnp.abs(y_pred[:, 1] - y[:, 1])).mean()
+        loss = (jnp.abs(y_pred[:, 0] - y[:, 0]) + 5 * jnp.abs(y_pred[:, 1] - y[:, 1])).mean()
         return loss
 
     grad_fn = jax.value_and_grad(loss_fn)
@@ -202,7 +202,7 @@ epochs = 1000
 
 # ts = datetime.now().strftime("%Y%m%d_%H%M%S")
 # train_work_dir = "./runs/goal_mpc_{}".format(ts)
-train_work_dir = "./runs/goal_mpc_4_region_l1_split_y_t"
+train_work_dir = "./runs/goal_mpc_normalized_1_region_l1"
 writer = SummaryWriter(train_work_dir)
 
 # config logging

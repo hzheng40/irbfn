@@ -19,8 +19,8 @@ os.environ["CUDA_VISIBLE_DEVICES"] = "2"
 
 flax.config.update('flax_use_orbax_checkpointing', False)
 
-config_f = "configs/goal_mpc_4_region_l1_split_y_t.yaml"
-ckpt = "ckpts/goal_mpc_4_region_l1_split_y_t/checkpoint_0"
+config_f = "configs/goal_mpc_normalized_1_region_l1.yaml"
+ckpt = "ckpts/goal_mpc_normalized_1_region_l1/checkpoint_0"
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
@@ -61,7 +61,7 @@ restored_state = checkpoints.restore_checkpoint(ckpt_dir=ckpt, target=state)
 
 if __name__ == "__main__":
     print('Loading data...')
-    table = np.load('goal_mpc_lookup_table_tiny_2.npz')['table']
+    table = np.load('goal_mpc_lookup_table_tiny_2_normalized.npz')['table']
     v_car = table[:, 0].flatten()
     x_goal = table[:, 1].flatten()
     y_goal = table[:, 2].flatten()
@@ -86,18 +86,18 @@ if __name__ == "__main__":
     print('Table assembled:', len(full_table), 'rows')
 
     print('Sampling full table...')
-    random_sample = np.random.default_rng().choice(full_table, size=len(full_table) // 2, replace=False, axis=0)
+    random_sample = np.random.default_rng().choice(full_table, size=len(full_table) // 5, replace=False, axis=0)
     print('Sampling completed')
 
     print('Number of Samples:', len(random_sample))
     print('Table Shape:', random_sample.shape)
 
     print('Shifting table...')
-    random_sample[:, 0] += 0.25
-    random_sample[:, 1] += 0.05
-    random_sample[:, 2] += 0.05
-    random_sample[:, 3] += 0.05
-    random_sample[:, 4] += 0.25
+    # random_sample[:, 0] += 0.001
+    # random_sample[:, 1] += 0.001
+    # random_sample[:, 2] += 0.001
+    # random_sample[:, 3] += 0.001
+    # random_sample[:, 4] += 0.001
     print('Table shift completed')
 
     print('Prediction running...')
@@ -109,8 +109,15 @@ if __name__ == "__main__":
     print('Error calculations completed')
     print('Final Table Shape:', results.shape)
 
-    np.savez(f'goal_mpc_4_region_l1_split_y_t_error.npz', table=results)
+    np.savez(f'goal_mpc_normalized_1_region_l1_error.npz', table=results)
     print('Data saved')
-    print('Max Velocity Error:', np.max(results[:, -2]))
-    print('Max Steering Angle Error:', np.max(results[:, -1]))
+    max_vel_error = np.max(results[:, -2])
+    max_str_error = np.max(results[:, -1])
+    print('Max Velocity Error:', max_vel_error)
+    print('Max Steering Angle Error:', max_str_error)
+
+    ranges = np.load('goal_mpc_lookup_table_tiny_2_ranges.npy')
+
+    print('Reverted Max Speed Error:', max_vel_error * (ranges[-2, 1] - ranges[-2, 0]))
+    print('Reverted Max Steer Error:', max_str_error * (ranges[-1, 1] - ranges[-1, 0]))
 
