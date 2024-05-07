@@ -45,8 +45,8 @@ import time
 
 flax.config.update('flax_use_orbax_checkpointing', False)
 
-config_f = "configs/nmpc_1_region.yaml"
-ckpt = "ckpts/nmpc_1_region/checkpoint_0"
+config_f = "configs/nmpc_4_regions.yaml"
+ckpt = "ckpts/nmpc_4_regions/checkpoint_0"
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
@@ -108,9 +108,6 @@ print('Mirroring completed')
 
 flattened_input = np.vstack([v_c_m, x_g_m, y_g_m, t_g_m, v_g_m]).T
 flattened_output = np.hstack([accel_m, deltv_m])
-
-# flattened_input = flattened_input[:len(v_c_m) // 3]
-# flattened_output = flattened_output[:len(v_c_m) // 3]
 
 # predictions
 # inputs = [arr.reshape(1, 75 for arr in flattened_input[:1000]]

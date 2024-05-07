@@ -62,11 +62,11 @@ lr = 0.001
 batch_size = 20000
 numk = 100
 
-# number of regions: 1x1x1x1x1 = 1
+# number of regions: 1x1x2x2x1 = 4
 num_split_v_car = 1
 num_split_x_g = 1
-num_split_y_g = 1
-num_split_t_g = 1
+num_split_y_g = 2
+num_split_t_g = 2
 num_split_v_g = 1
 
 # loading raw data
@@ -109,8 +109,8 @@ print('Data processing done')
 in_features = flattened_input.shape[1]
 out_features = flattened_output.shape[1]
 num_regions = num_split_v_car * num_split_x_g * num_split_y_g * num_split_t_g * num_split_v_g
-lower_bounds = [v_c_bounds[:-1], x_g_bounds[:-1], y_g_bounds[:-1], t_g_bounds[:-1], v_g_bounds[:-1]]
-upper_bounds = [v_c_bounds[1:] , x_g_bounds[1:] , y_g_bounds[1:] , t_g_bounds[1:] , v_g_bounds[1:] ]
+lower_bounds = [v_c_bounds[:-1], x_g_bounds[:-1], [-3.6, -0.2], [-3.2, -0.2], v_g_bounds[:-1]]
+upper_bounds = [v_c_bounds[1:] , x_g_bounds[1:] , [ 0.2,  3.6], [ 0.2,  3.2], v_g_bounds[1:] ]
 activation_idx = [0, 1, 2, 3, 4]
 delta = [10.0, 15.0, 15.0, 100.0, 10.0]
 basis_function = inverse_quadratic
@@ -240,7 +240,7 @@ def train_step(state, x, y):
 num_points = flattened_output.shape[0]
 epochs = 1000
 
-train_work_dir = "./runs/nmpc_1_region"
+train_work_dir = "./runs/nmpc_4_regions"
 writer = SummaryWriter(train_work_dir)
 
 # config logging
