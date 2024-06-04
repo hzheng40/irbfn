@@ -21,19 +21,17 @@
 # SOFTWARE.
 
 # Author: Hongrui Zheng
-# Last Modified: 11/14/2022
+# Last Modified: 6/4/2024
 
-FROM nvidia/cuda:11.8.0-cudnn8-devel-ubuntu20.04
+FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 
 ARG DEBIAN_FRONTEND="noninteractive"
 
 # apt packages
 RUN apt-get update --fix-missing && \
     apt-get install -y \
-    python3-dev python3-pip
-
-RUN apt-get update \
-    && apt-get install -y git \
+    python3 python3-pip \
+    git \
     vim \
     tmux \
     automake \
