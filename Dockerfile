@@ -28,9 +28,12 @@ FROM nvidia/cuda:12.2.2-cudnn8-runtime-ubuntu22.04
 ARG DEBIAN_FRONTEND="noninteractive"
 
 # apt packages
-RUN apt-get update --fix-missing && \
+RUN apt-get update && \
+    apt-get install -y software-properties-common && \
+    add-apt-repository ppa:deadsnakes/ppa && \
+    apt-get update --fix-missing && \
     apt-get install -y \
-    python3 python3-pip \
+    python3.12 python3.12-venv \
     git \
     vim \
     tmux \
@@ -43,7 +46,8 @@ RUN mkdir -p $WORKPATH
 COPY ./requirements.txt $WORKPATH/requirements.txt
 
 # pip packages
-RUN pip install -r $WORKPATH/requirements.txt
+RUN python3.12 -m ensurepip --upgrade && \
+    python3.12 -m pip install -r $WORKPATH/requirements.txt
 
 WORKDIR $WORKPATH
 ENTRYPOINT ["/bin/bash"]
