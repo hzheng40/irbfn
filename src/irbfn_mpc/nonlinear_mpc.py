@@ -270,5 +270,5 @@ def mpc_solve(v_car, x_goal, y_goal, t_goal, v_goal):
 
 
 if __name__ == '__main__':
-    # print(mpc_solve(0.0, 0.0, -0.5, 0.0, 0.0))
-    print(np.load('nmpc_lookup_table.npz')['outputs'].shape)
+    print(mpc_solve(0.0, 0.0, 1.5, 0.0, 3.0))
+    # print(np.load('nmpc_lookup_table.npz')['outputs'].shape)
