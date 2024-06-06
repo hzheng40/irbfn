@@ -1,0 +1,23 @@
+[project]
+name = "irbfn_mpc"
+authors = [{name = "Hongrui Zheng", email = "hongruiz@seas.upenn.edu"}]
+version = "0.1.0"
+requires-python = ">=3.10"
+dependencies = [
+  "jax[cuda12]",
+  "chex",
+  "flax",
+  "optax",
+  "distrax",
+  "scipy",
+  "tqdm",
+  "orbax-checkpoint",
+  "joblib",
+  "casadi",
+  "flax_rbf@git+https://github.com/hzheng40/flax_rbf",
+  "f1tenth_gym@git+https://github.com/f1tenth/f1tenth_gym@bump_numpy_ver"
+]
+
+[build-system]
+requires = ["setuptools >= 61.0"]
+build-backend = "setuptools.build_meta"

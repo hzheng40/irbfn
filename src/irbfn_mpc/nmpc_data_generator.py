@@ -2,7 +2,7 @@ import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
 
-from nonlinear_mpc import mpc_solve
+from .nonlinear_mpc import mpc_solve
 
 
 """ Input state mesh grid parameters. """
