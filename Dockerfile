@@ -38,6 +38,7 @@ RUN apt-get update && \
     vim \
     tmux \
     automake \
+    ffmpeg \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
