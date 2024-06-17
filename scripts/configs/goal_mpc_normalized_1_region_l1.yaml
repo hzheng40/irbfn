@@ -1,0 +1,39 @@
+activation_idx:
+- 0
+- 1
+- 2
+- 3
+- 4
+basis_func: inverse_quadratic
+batch_size: 400000
+delta:
+- 15.0
+- 15.0
+- 15.0
+- 15.0
+- 15.0
+dimension_ranges:
+- - 0
+  - 0
+  - 0
+  - 0
+  - 0
+epochs: 1000
+in_features: 5
+lower_bounds:
+- - 0.0
+- - 0.0
+- - 0.0
+- - 0.0
+- - 0.0
+lr: 0.0015
+num_kernels: 100
+num_regions: 1
+out_features: 2
+seed: 0
+upper_bounds:
+- - 1.0
+- - 1.0
+- - 1.0
+- - 1.0
+- - 1.0

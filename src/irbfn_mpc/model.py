@@ -31,7 +31,7 @@ import chex
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from flax_rbf import RBFLayer
+from flax_rbf.flax_rbf import RBFLayer
 
 
 @partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6])
