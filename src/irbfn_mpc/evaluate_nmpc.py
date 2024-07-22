@@ -26,7 +26,7 @@
 import os
 
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
-os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 import argparse
 import yaml
@@ -37,7 +37,7 @@ import optax
 import flax
 from flax.training import train_state, checkpoints
 import matplotlib.pyplot as plt
-from flax_rbf import *
+from flax_rbf.flax_rbf import *
 from model import WCRBFNet
 from tqdm import tqdm
 import time
@@ -45,8 +45,8 @@ import time
 
 flax.config.update('flax_use_orbax_checkpointing', False)
 
-config_f = "configs/nmpc_4_regions.yaml"
-ckpt = "ckpts/nmpc_4_regions/checkpoint_0"
+config_f = "scripts/configs/nmpc_4_regions.yaml"
+ckpt = "scripts/ckpts/nmpc_4_regions/checkpoint_0"
 with open(config_f, "r") as f:
     config_dict = yaml.safe_load(f)
 conf = argparse.Namespace(**config_dict)
@@ -85,7 +85,7 @@ state = train_state.TrainState.create(apply_fn=wcrbf.apply, params=params, tx=op
 restored_state = checkpoints.restore_checkpoint(ckpt_dir=ckpt, target=state)
 
 print('Loading data...')
-data = np.load('test_nmpc_lookup_table.npz')
+data = np.load('data/test_nmpc_lookup_table.npz')
 inputs, outputs = data['inputs'], data['outputs']
 v_c = inputs[:, 0].flatten()
 x_g = inputs[:, 1].flatten()

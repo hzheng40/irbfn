@@ -1,126 +1,85 @@
 import numpy as np
 from joblib import Parallel, delayed
 from tqdm import tqdm
+from irbfn_mpc.arg_utils import dnmpc_table_gen_args
 
-from .nonlinear_mpc import mpc_solve
-
-
-""" Input state mesh grid parameters. """
-# car velocity [23]
-v_car_min = 0.0
-v_car_max = 7.0
-dv_car =    0.3
-
-# goal x-position [35]
-x_goal_min = 0.0
-x_goal_max = 3.5
-dx_goal =    0.1
-
-# goal y-position [35]
-y_goal_min = 0.0
-y_goal_max = 3.5
-dy_goal =    0.1
-
-# goal heading [62]
-t_goal_min = -3.1
-t_goal_max =  3.1
-dt_goal =     0.1
-
-# goal velocity [23]
-v_goal_min = 0.0
-v_goal_max = 7.0
-dv_goal =    0.3
-
-n_jobs = 45  # number of jobs
+from irbfn_mpc.nonlinear_dmpc import NMPCPlanner as DNMPCPlanner
+from irbfn_mpc.nonlinear_dmpc import mpc_config as dmpc_config
 
 
-def train_data():
-    # generate input state mesh grid
-    print('Generating input state mesh grid')
-    v_car = np.arange(v_car_min, v_car_max + dv_car, dv_car)
-    x_goal = np.arange(x_goal_min, x_goal_max + dx_goal, dx_goal)
-    y_goal = np.arange(y_goal_min, y_goal_max + dy_goal, dy_goal)
-    t_goal = np.arange(t_goal_min, t_goal_max + dt_goal, dt_goal)
-    v_goal = np.arange(v_goal_min, v_goal_max + dv_goal, dv_goal)
-    v_car_m, x_goal_m, y_goal_m, t_goal_m, v_goal_m = np.meshgrid(
-        v_car, x_goal, y_goal, t_goal, v_goal, indexing='ij'
+def gen_data(args):
+    print(f"Instantiating MPC solver")
+    mpc_config = dmpc_config(MU=args.mu)
+
+    def mpc_solve(chunks):
+        solutions = []
+        solver = DNMPCPlanner(config=mpc_config)
+        for chunk in chunks:
+            v_car, x_goal, y_goal, t_goal, v_goal, beta, angv_z = chunk
+            inputs = np.array([v_car, x_goal, y_goal, t_goal, v_goal, beta, angv_z])
+            current_state = {
+                "pose_x": 0.0,
+                "pose_y": 0.0,
+                "pose_theta": 0.0,
+                "delta": 0.0,
+                "linear_vel_x": v_car,
+                "ang_vel_z": angv_z,
+                "beta": beta,
+            }
+            goal_state = np.array([x_goal, y_goal, 0.0, v_goal, t_goal, 0.0, 0.0])
+            solutions.append((inputs, solver.mpc_prob_solve(goal_state, current_state)))
+        return solutions
+
+    print("Generating input state mesh grid")
+    v_car = np.arange(args.v_car_min, args.v_car_max + args.dv_car, args.dv_car)
+    x_goal = np.arange(args.x_goal_min, args.x_goal_max + args.dx_goal, args.dx_goal)
+    y_goal = np.arange(args.y_goal_min, args.y_goal_max + args.dy_goal, args.dy_goal)
+    t_goal = np.arange(args.t_goal_min, args.t_goal_max + args.dt_goal, args.dt_goal)
+    v_goal = np.arange(args.v_goal_min, args.v_goal_max + args.dv_goal, args.dv_goal)
+    beta = np.arange(args.beta_min, args.beta_max, args.dbeta)
+    angv_z = np.arange(args.angv_z_min, args.angv_z_max, args.dang_v)
+
+    num_v = len(v_car)
+    num_x = len(x_goal)
+    num_y = len(y_goal)
+    num_t = len(t_goal)
+    num_v_goal = len(v_goal)
+    num_beta = len(beta)
+    num_angv_z = len(angv_z)
+    filename = f"{num_v}v_{num_x}x_{num_y}y_{num_t}t_{num_v_goal}vgoal_{num_beta}beta_{num_angv_z}angvz_mu{args.mu}.npz"
+
+    v_car_m, x_goal_m, y_goal_m, t_goal_m, v_goal_m, beta_m, angv_z_m = np.meshgrid(
+        v_car, x_goal, y_goal, t_goal, v_goal, beta, angv_z, indexing="ij"
     )
     v_car = v_car_m.flatten()
     x_goal = x_goal_m.flatten()
     y_goal = y_goal_m.flatten()
     t_goal = t_goal_m.flatten()
     v_goal = v_goal_m.flatten()
-    print(f'Input state mesh grid generation completed: {len(v_car)} samples')
+    beta = beta_m.flatten()
+    angv_z = angv_z_m.flatten()
 
-    table = Parallel(n_jobs=n_jobs)(
-        delayed(mpc_solve)(vc, xg, yg, tg, vg)
-        for vc, xg, yg, tg, vg in tqdm(zip(v_car, x_goal, y_goal, t_goal, v_goal), total=len(v_car))
+    print(f"Input state mesh grid generation completed: {len(v_car)} samples")
+    all_chunks = np.column_stack((v_car, x_goal, y_goal, t_goal, v_goal, beta, angv_z))
+    balanced_chunks = np.array_split(all_chunks, args.n_jobs, axis=0)
+
+    print(f"Generating {filename}.")
+    table_frags = Parallel(n_jobs=args.n_jobs)(
+        delayed(mpc_solve)(chunks) for chunks in balanced_chunks
     )
+    table = []
+    for frags in table_frags:
+        table += frags
+
+    print(f"Saving {filename}.")
     table = [solution for solution in table if solution[1] is not None]
-    inputs =  np.array([solution[0] for solution in table])
+    inputs = np.array([solution[0] for solution in table])
     outputs = np.array([solution[1] for solution in table])
     outputs = np.moveaxis(outputs, 1, 2)
 
-    np.savez(f'nmpc_lookup_table.npz', inputs=inputs, outputs=outputs)
+    np.savez(args.save_path + filename, inputs=inputs, outputs=outputs)
 
 
-""" Test mesh grid parameters. """
-# car velocity [23]
-test_v_car_min = 0.7
-test_v_car_max = 6.3
-test_dv_car =    0.3
-
-# goal x-position [35]
-test_x_goal_min = 0.25
-test_x_goal_max = 3.25
-test_dx_goal =    0.1
-
-# goal y-position [35]
-test_y_goal_min = 0.25
-test_y_goal_max = 3.25
-test_dy_goal =    0.1
-
-# goal heading [62]
-test_t_goal_min = -2.85
-test_t_goal_max =  2.85
-test_dt_goal =     0.1
-
-# goal velocity [23]
-test_v_goal_min = 0.7
-test_v_goal_max = 6.3
-test_dv_goal =    0.3
-
-
-def test_data():
-    # generate input state mesh grid
-    print('Generating test state mesh grid')
-    v_car = np.arange(test_v_car_min, test_v_car_max + test_dv_car, test_dv_car)
-    x_goal = np.arange(test_x_goal_min, test_x_goal_max + test_dx_goal, test_dx_goal)
-    y_goal = np.arange(test_y_goal_min, test_y_goal_max + test_dy_goal, test_dy_goal)
-    t_goal = np.arange(test_t_goal_min, test_t_goal_max + test_dt_goal, test_dt_goal)
-    v_goal = np.arange(test_v_goal_min, test_v_goal_max + test_dv_goal, test_dv_goal)
-    v_car_m, x_goal_m, y_goal_m, t_goal_m, v_goal_m = np.meshgrid(
-        v_car, x_goal, y_goal, t_goal, v_goal, indexing='ij'
-    )
-    v_car = v_car_m.flatten()
-    x_goal = x_goal_m.flatten()
-    y_goal = y_goal_m.flatten()
-    t_goal = t_goal_m.flatten()
-    v_goal = v_goal_m.flatten()
-    print(f'Test state mesh grid generation completed: {len(v_car)} samples')
-
-    table = Parallel(n_jobs=n_jobs)(
-        delayed(mpc_solve)(vc, xg, yg, tg, vg)
-        for vc, xg, yg, tg, vg in tqdm(zip(v_car, x_goal, y_goal, t_goal, v_goal), total=len(v_car))
-    )
-    table = [solution for solution in table if solution[1] is not None]
-    inputs =  np.array([solution[0] for solution in table])
-    outputs = np.array([solution[1] for solution in table])
-    outputs = np.moveaxis(outputs, 1, 2)
-
-    np.savez(f'test_nmpc_lookup_table.npz', inputs=inputs, outputs=outputs)
-
-
-if __name__ == '__main__':
-    test_data()
-
+if __name__ == "__main__":
+    args = dnmpc_table_gen_args()
+    gen_data(args)
