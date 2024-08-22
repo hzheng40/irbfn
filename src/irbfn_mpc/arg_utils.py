@@ -1,5 +1,6 @@
 import argparse
 
+
 def dnmpc_table_gen_args():
     parser = argparse.ArgumentParser()
     # gridding
@@ -21,15 +22,74 @@ def dnmpc_table_gen_args():
     parser.add_argument("--beta_min", type=float, default=-0.6)
     parser.add_argument("--beta_max", type=float, default=0.6)
     parser.add_argument("--dbeta", type=float, default=0.2)
-    parser.add_argument("--angv_z_min", type=float, default=0.0)
+    parser.add_argument("--angv_z_min", type=float, default=-3.0)
     parser.add_argument("--angv_z_max", type=float, default=3.0)
     parser.add_argument("--dang_v", type=float, default=0.5)
     # run config
-    parser.add_argument("--n_jobs", type=int, default=80)
-    parser.add_argument("--save_path", type=str, default="/data/tables")
+    parser.add_argument("--n_jobs", type=int, default=100)
+    parser.add_argument("--save_path", type=str, default="/data/tables/")
     # parser.add_argument("--ouput_steps", type=int, default=2)
     # mpc model config
-    parser.add_argument("--mu", type=float, default=1.0489)
-    # TODO: add more?
+    parser.add_argument("--mu", type=float, default=1.0)
+    parser.add_argument("--cs", type=float, default=5.0)
+    args = parser.parse_args()
+    return args
+
+
+def dnmpc_train_args():
+    parser = argparse.ArgumentParser()
+    # splits
+    parser.add_argument("--num_v", type=int, default=1)
+    parser.add_argument("--num_x", type=int, default=1)
+    parser.add_argument("--num_y", type=int, default=2)
+    parser.add_argument("--num_t", type=int, default=2)
+    parser.add_argument("--num_vgoal", type=int, default=1)
+    parser.add_argument("--num_beta", type=int, default=1)
+    parser.add_argument("--num_angvz", type=int, default=1)
+    # data
+    parser.add_argument("--npz_path", type=str, required=True)
+    # training
+    parser.add_argument("--gpu", type=str, default="")
+    parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--max_grad_norm", type=float, default=1.0)
+    parser.add_argument("--batch_size", type=int, default=80000)
+    parser.add_argument("--num_k", type=int, default=100)
+    parser.add_argument("--train_epochs", type=int, default=1000)
+    parser.add_argument("--use_float64", action="store_true")
+    parser.add_argument("--run_name", type=str, default="dnmpc_4regions")
+    parser.add_argument("--run_tags", nargs="+", type=str)
+    # multi-step losses
+    parser.add_argument("--use_multistep", action="store_true")
+
+    parser.add_argument("--mu", type=float, default=1.0)
+    parser.add_argument("--cs", type=float, default=5.0)
+    
+    args = parser.parse_args()
+    return args
+
+
+def dnmpc_eval_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--j", type=int, default=10)
+    parser.add_argument("--num_trials", type=int, default=10, help="number of trials per parameter combo")
+    parser.add_argument("--num_mu", type=int, default=10)
+    parser.add_argument("--mu_min", type=float, default=0.5)
+    parser.add_argument("--mu_max", type=float, default=1.1)
+    parser.add_argument("--num_cs", type=int, default=10)
+    parser.add_argument("--cs_min", type=float, default=1.)
+    parser.add_argument("--cs_max", type=float, default=10.)
+    parser.add_argument("--out_name", type=str, default="dnmpc_eval_results")
+    parser.add_argument("--noise_scale", type=float, default=0.01)
+    parser.add_argument("--seed", type=int, default=123)
+
+    args = parser.parse_args()
+    return args
+
+
+def irbfn_dnmpc_eval_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config_f", type=str, required=True)
+    parser.add_argument("--ckpt", type=str, required=True)
     args = parser.parse_args()
     return args

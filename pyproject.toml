@@ -16,7 +16,7 @@ dependencies = [
   "casadi",
   "moviepy",
   "flax_rbf@git+https://github.com/hzheng40/flax_rbf",
-  "f1tenth_gym@git+https://github.com/f1tenth/f1tenth_gym@bump_numpy_ver"
+  "f1tenth_gym@git+https://github.com/f1tenth/f1tenth_gym@v1.0.0"
 ]
 
 [build-system]

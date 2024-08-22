@@ -39,9 +39,9 @@ class mpc_config:
     WHEELBASE: float = 0.33  # wheelbase [m]
 
     # Vehicle parameters
-    MU: float = 1.0489 # friction coefficient
-    C_SF: float = 4.718 # front cornering stiffness
-    C_SR: float = 5.4562 # rear cornering stiffness
+    MU: float = 1.0 # friction coefficient
+    C_SF: float = 5.0 # front cornering stiffness
+    C_SR: float = 5.0 # rear cornering stiffness
     LF: float = 0.15875 # distance from center of gravity to front axle
     LR: float = 0.17145 # distance from center of gravity to rear axle
     H: float = 0.074 # height of center of gravity
@@ -261,7 +261,7 @@ class NMPCPlanner:
         fsteer = lambda delta, vdelta: vdelta # ideal, continuous time steering-speed
         facc = lambda speed, along: along # ideal, continuous time acceleration
         
-        v_s = 2.0
+        v_s = 3.0
         v_b = 0.1
         v_min = v_s/2
 
