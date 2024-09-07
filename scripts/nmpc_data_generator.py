@@ -63,13 +63,21 @@ def gen_data(args):
 
     print(f"Input state mesh grid generation completed: {len(v_car)} samples")
     all_chunks = np.column_stack((v_car, x_goal, y_goal, t_goal, v_goal, beta, angv_z))
+
     # randomize order
-    np.random.shuffle(all_chunks)
+    # np.random.shuffle(all_chunks)
+    rand_ind = np.arange(all_chunks.shape[0])
+    np.random.shuffle(rand_ind)
+    unrand_ind = np.argsort(rand_ind)
+
+    all_chunks = all_chunks[rand_ind]
+
     balanced_chunks = np.array_split(all_chunks, args.n_jobs, axis=0)
 
     print(f"Generating {filename}.")
     table_frags = Parallel(n_jobs=args.n_jobs)(
-        delayed(mpc_solve)(chunks, worker_i) for worker_i, chunks in enumerate(balanced_chunks)
+        delayed(mpc_solve)(chunks, worker_i)
+        for worker_i, chunks in enumerate(balanced_chunks)
     )
     table = []
     for frags in table_frags:
@@ -81,7 +89,15 @@ def gen_data(args):
     outputs = np.array([solution[1] for solution in table])
     outputs = np.moveaxis(outputs, 1, 2)
 
+    inputs_sorted = inputs[unrand_ind, :]
+    outputs_sorted = outputs[unrand_ind, :]
+
     np.savez(args.save_path + filename, inputs=inputs, outputs=outputs)
+    np.savez(
+        args.save_path + filename[:-4] + "_sorted" + filename[-4:],
+        inputs=inputs_sorted,
+        outputs=outputs_sorted,
+    )
 
 
 if __name__ == "__main__":
