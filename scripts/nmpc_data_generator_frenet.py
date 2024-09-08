@@ -26,7 +26,7 @@ def gen_data(args):
         def mpc_solve(chunks, worker_i):
             solutions = []
             solver = DNMPCPlanner(config=mpc_config)
-            iterations = tqdm(chunks) if worker_i == 69 else chunks
+            iterations = tqdm(chunks) if worker_i == 12 else chunks
 
             for chunk in iterations:
                 ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv = chunk
@@ -68,6 +68,8 @@ def gen_data(args):
 
         print(f"Input state mesh grid generation completed: {len(ey)} samples")
         all_chunks = np.column_stack((ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv))
+
+        all_chunks = all_chunks[:1, :]
 
         # randomize order
         # np.random.shuffle(all_chunks)

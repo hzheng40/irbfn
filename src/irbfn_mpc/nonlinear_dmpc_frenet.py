@@ -615,7 +615,7 @@ class NMPCPlanner:
             # print(e)
             # print(f"ey {ey}, delta {delta}, vx_car {vx_car}, vy_car {vy_car}, vx_goal {vx_goal}, wz {wz}, epsi {epsi}, curv {curv}")
             error_out = -999 * np.ones((self.config.TK, ))
-            return error_out, error_out, error_out
+            return error_out, error_out
 
         # extract solution
         u_sol = sol.value(self.U)
@@ -625,4 +625,4 @@ class NMPCPlanner:
         self.odelta_v = u_sol[1, :].flatten()
         self.odelta = x_sol[2, :].flatten()
 
-        return self.oa, self.odelta_v, self.odelta
+        return self.oa, self.odelta_v
