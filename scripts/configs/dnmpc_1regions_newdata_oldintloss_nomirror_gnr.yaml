@@ -1,0 +1,51 @@
+activation_idx:
+- 0
+- 1
+- 2
+- 3
+- 4
+- 5
+- 6
+basis_func: gaussian_narrower
+batch_size: 80000
+cs: 5.0
+delta:
+- 10.0
+- 10.0
+- 10.0
+- 100.0
+- 10.0
+- 100.0
+- 100.0
+dimension_ranges:
+- - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+  - 0
+epochs: 1000
+in_features: 7
+lower_bounds:
+- - 0.0
+- - 0.0
+- - 0.0
+- - -3.1
+- - 0.0
+- - -0.6
+- - -3.0
+lr: 0.001
+mu: 1.0
+num_kernels: 100
+num_regions: 1
+out_features: 10
+seed: 123
+upper_bounds:
+- - 7.0
+- - 3.6
+- - 3.6
+- - 3.200000000000006
+- - 7.0
+- - 0.4
+- - 2.5
