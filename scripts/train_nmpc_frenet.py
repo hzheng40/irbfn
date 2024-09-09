@@ -33,8 +33,8 @@ from flax_rbf.flax_rbf import (
     gaussian_wider,
 )
 from irbfn_mpc.model import WCRBFNet
-from irbfn_mpc.arg_utils import dnmpc_train_args
-from irbfn_mpc.dynamics import integrate_st_mult, dynamic_st_onestep_aux
+from irbfn_mpc.arg_utils import dnmpc_frenet_train_args
+from irbfn_mpc.dynamics import integrate_frenet_mult, dynamic_frenet_onestep_aux
 
 
 def main(args):
@@ -47,109 +47,135 @@ def main(args):
     print("Loading data...")
     data = np.load(args.npz_path)
     inputs, outputs = data["inputs"], data["outputs"]
-    v_c = inputs[:, 0].flatten()
-    x_g = inputs[:, 1].flatten()
-    y_g = inputs[:, 2].flatten()
-    t_g = inputs[:, 3].flatten()
-    v_g = inputs[:, 4].flatten()
-    beta = inputs[:, 5].flatten()
-    angvz = inputs[:, 6].flatten()
+    # inputs [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
+    ey = inputs[:, 0].flatten()
+    delta = inputs[:, 1].flatten()
+    vx_car = inputs[:, 2].flatten()
+    vy_car = inputs[:, 3].flatten()
+    vx_goal = inputs[:, 4].flatten()
+    wz = inputs[:, 5].flatten()
+    epsi = inputs[:, 6].flatten()
+    curv = inputs[:, 7].flatten()
     accel = outputs[:, :, 0]
     deltv = outputs[:, :, 1]
     print("Data import completed")
 
     if args.mirror_data:
         print("Mirroring data...")
-        v_c_m = np.concatenate((v_c, v_c), axis=0)
-        x_g_m = np.concatenate((x_g, x_g), axis=0)
-        y_g_m = np.concatenate((y_g, -y_g), axis=0)
-        t_g_m = np.concatenate((t_g, -t_g), axis=0)
-        v_g_m = np.concatenate((v_g, v_g), axis=0)
-        beta_m = np.concatenate((beta, beta), axis=0)
-        angvz_m = np.concatenate((angvz, angvz), axis=0)
+        ey_m = np.concatenate((ey, -ey), axis=0)
+        delta_m = np.concatenate((delta, delta), axis=0)
+        vx_car_m = np.concatenate((vx_car, vx_car), axis=0)
+        vy_car_m = np.concatenate((vy_car, vy_car), axis=0)
+        vx_goal_m = np.concatenate((vx_goal, vx_goal), axis=0)
+        wz_m = np.concatenate((wz, wz), axis=0)
+        epsi_m = np.concatenate((epsi, -epsi), axis=0)
+        curv_m = np.concatenate((curv, curv), axis=0)
         accel_m = np.concatenate((accel, accel), axis=0)
         deltv_m = np.concatenate((deltv, -deltv), axis=0)
         print("Mirroring completed")
     else:
-        v_c_m = v_c
-        x_g_m = x_g
-        y_g_m = y_g
-        t_g_m = t_g
-        v_g_m = v_g
-        beta_m = beta
-        angvz_m = angvz
+        ey_m = ey
+        delta_m = delta
+        vx_car_m = vx_car
+        vy_car_m = vy_car
+        vx_goal_m = vx_goal
+        wz_m = wz
+        epsi_m = epsi
+        curv_m = curv
         accel_m = accel
         deltv_m = deltv
 
     print("Generating bounds...")
 
-    v_c_bounds = np.sort(np.unique(v_c_m))
-    x_g_bounds = np.sort(np.unique(x_g_m))
-    y_g_bounds = np.sort(np.unique(y_g_m))
-    t_g_bounds = np.sort(np.unique(t_g_m))
-    v_g_bounds = np.sort(np.unique(v_g_m))
-    beta_bounds = np.sort(np.unique(beta_m))
-    angvz_bounds = np.sort(np.unique(angvz_m))
+    ey_bounds = np.sort(np.unique(ey_m))
+    delta_bounds = np.sort(np.unique(delta_m))
+    vx_car_bounds = np.sort(np.unique(vx_car_m))
+    vy_car_bounds = np.sort(np.unique(vy_car_m))
+    vx_goal_bounds = np.sort(np.unique(vx_goal_m))
+    wz_bounds = np.sort(np.unique(wz_m))
+    epsi_bounds = np.sort(np.unique(epsi_m))
+    curv_bounds = np.sort(np.unique(curv_m))
 
-    vc_ind = np.linspace(
-        start=0, stop=len(v_c_bounds) - 1, num=args.num_v + 1, endpoint=True, dtype=int
+    ey_ind = np.linspace(
+        start=0, stop=len(ey_bounds) - 1, num=args.num_ey + 1, endpoint=True, dtype=int
     )
-    xg_ind = np.linspace(
-        start=0, stop=len(x_g_bounds) - 1, num=args.num_x + 1, endpoint=True, dtype=int
-    )
-    yg_ind = np.linspace(
-        start=0, stop=len(y_g_bounds) - 1, num=args.num_y + 1, endpoint=True, dtype=int
-    )
-    tg_ind = np.linspace(
-        start=0, stop=len(t_g_bounds) - 1, num=args.num_t + 1, endpoint=True, dtype=int
-    )
-    vg_ind = np.linspace(
+    delta_ind = np.linspace(
         start=0,
-        stop=len(v_g_bounds) - 1,
-        num=args.num_vgoal + 1,
+        stop=len(delta_bounds) - 1,
+        num=args.num_delta + 1,
         endpoint=True,
         dtype=int,
     )
-    beta_ind = np.linspace(
+    vx_car_ind = np.linspace(
         start=0,
-        stop=len(beta_bounds) - 1,
-        num=args.num_beta + 1,
+        stop=len(vx_car_bounds) - 1,
+        num=args.num_vx_car + 1,
         endpoint=True,
         dtype=int,
     )
-    angvz_ind = np.linspace(
+    vy_car_ind = np.linspace(
         start=0,
-        stop=len(angvz_bounds) - 1,
-        num=args.num_angvz + 1,
+        stop=len(vy_car_bounds) - 1,
+        num=args.num_vy_car + 1,
+        endpoint=True,
+        dtype=int,
+    )
+    vx_goal_ind = np.linspace(
+        start=0,
+        stop=len(vx_goal_bounds) - 1,
+        num=args.num_vx_goal + 1,
+        endpoint=True,
+        dtype=int,
+    )
+    wz_ind = np.linspace(
+        start=0,
+        stop=len(wz_bounds) - 1,
+        num=args.num_wz + 1,
+        endpoint=True,
+        dtype=int,
+    )
+    epsi_ind = np.linspace(
+        start=0,
+        stop=len(epsi_bounds) - 1,
+        num=args.num_epsi + 1,
+        endpoint=True,
+        dtype=int,
+    )
+    curv_ind = np.linspace(
+        start=0,
+        stop=len(curv_bounds) - 1,
+        num=args.num_curv + 1,
         endpoint=True,
         dtype=int,
     )
 
     lower_bounds = [
-        list(v_c_bounds[vc_ind[:-1]]),
-        list(x_g_bounds[xg_ind[:-1]]),
-        list(y_g_bounds[yg_ind[:-1]]),
-        list(t_g_bounds[tg_ind[:-1]]),
-        list(v_g_bounds[vg_ind[:-1]]),
-        # list(d_v_bounds[dv_ind[:-1]]),
-        list(beta_bounds[beta_ind[:-1]]),
-        list(angvz_bounds[angvz_ind[:-1]]),
+        list(ey_bounds[ey_ind[:-1]]),
+        list(delta_bounds[delta_ind[:-1]]),
+        list(vx_car_bounds[vx_car_ind[:-1]]),
+        list(vy_car_bounds[vy_car_ind[:-1]]),
+        list(vx_goal_bounds[vx_goal_ind[:-1]]),
+        list(wz_bounds[wz_ind[:-1]]),
+        list(epsi_bounds[epsi_ind[:-1]]),
+        list(curv_bounds[curv_ind[:-1]]),
     ]
     upper_bounds = [
-        list(v_c_bounds[vc_ind[1:]]),
-        list(x_g_bounds[xg_ind[1:]]),
-        list(y_g_bounds[yg_ind[1:]]),
-        list(t_g_bounds[tg_ind[1:]]),
-        list(v_g_bounds[vg_ind[1:]]),
-        # list(d_v_bounds[dv_ind[1:]]),
-        list(beta_bounds[beta_ind[1:]]),
-        list(angvz_bounds[angvz_ind[1:]]),
+        list(ey_bounds[ey_ind[1:]]),
+        list(delta_bounds[delta_ind[1:]]),
+        list(vx_car_bounds[vx_car_ind[1:]]),
+        list(vy_car_bounds[vy_car_ind[1:]]),
+        list(vx_goal_bounds[vx_goal_ind[1:]]),
+        list(wz_bounds[wz_ind[1:]]),
+        list(epsi_bounds[epsi_ind[1:]]),
+        list(curv_bounds[curv_ind[1:]]),
     ]
 
     print("Bounds defined")
 
     print("Generating input and output...")
-    flattened_input = np.vstack([v_c_m, x_g_m, y_g_m, t_g_m, v_g_m, beta_m, angvz_m]).T
+    flattened_input = np.vstack(
+        [ey_m, delta_m, vx_car_m, vy_car_m, vx_goal_m, wz_m, epsi_m, curv_m]
+    ).T
     flattened_output = np.hstack([accel_m, deltv_m])
     if args.only_onestep:
         flattened_output = flattened_output[:, [0, 5]]
@@ -170,18 +196,18 @@ def main(args):
     in_features = flattened_input.shape[1]
     out_features = flattened_output.shape[1]
     num_regions = (
-        args.num_v
-        * args.num_x
-        * args.num_y
-        * args.num_t
-        * args.num_vgoal
-        * args.num_beta
-        * args.num_angvz
+        args.num_ey
+        * args.num_delta
+        * args.num_vx_car
+        * args.num_vy_car
+        * args.num_vx_goal
+        * args.num_wz
+        * args.num_epsi
+        * args.num_curv
     )
 
-    # activation_idx = [0, 1, 2, 3, 4, 5, 6]
     activation_idx = np.arange(in_features).tolist()
-    delta = [100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0]
+    delta = [15.0, 10.0, 100.0, 100.0, 100.0, 10.0, 10.0, 10.0]
     basis_function = eval(args.basis_function)
 
     # rng
@@ -235,47 +261,44 @@ def main(args):
     # train one step, with one step integration
     @jax.jit
     def train_step_oneint(state, x, y):
-        initial_state = jnp.zeros((x.shape[0], 7))
-        # v
-        initial_state = initial_state.at[:, 3].set(x[:, 0])
-        # beta
-        initial_state = initial_state.at[:, 6].set(x[:, 5])
-        # angv
-        initial_state = initial_state.at[:, 5].set(x[:, 6])
+        # input states x [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
+        # output from dynamics [ey, delta, vx_car, vy_car, wz, epsi]
+        initial_state = x[:, [0, 1, 2, 3, 5, 6, 7]]
 
         def loss_fn(params):
             y_predictions = wcrbf.apply(params, x)
-            # x order, goal state
-            # [v_c, x_g, y_g, t_g, v_g, beta, angv]
+            # [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
             x_pred_u = jnp.hstack((initial_state, y_predictions))
             x_u = jnp.hstack((initial_state, y))
 
-            actual_integrated_states = dynamic_st_onestep_aux(x_u, dyn_params)
-            predicted_integrated_states = dynamic_st_onestep_aux(x_pred_u, dyn_params)
+            actual_integrated_states = dynamic_frenet_onestep_aux(x_u, dyn_params)
+            predicted_integrated_states = dynamic_frenet_onestep_aux(
+                x_pred_u, dyn_params
+            )
 
+            pred_loss = jnp.abs(y_predictions - y).mean()
+            int_loss = jnp.abs(
+                predicted_integrated_states
+                - actual_integrated_states
+            ).mean()
+
+            loss = pred_loss + int_loss
+            # loss = pred_loss
             # loss = (
-            #     jnp.abs(y_predictions - y).mean()
-            #     + jnp.abs(
-            #         predicted_integrated_states[:, [0, 1, 3, 4]]
-            #         - actual_integrated_states[:, [0, 1, 3, 4]]
+            #     optax.l2_loss(predictions=y_predictions, targets=y).mean()
+            #     + optax.l2_loss(
+            #         predictions=predicted_integrated_states[:, [0, 1, 3, 4]],
+            #         targets=actual_integrated_states[:, [0, 1, 3, 4]],
             #     ).mean()
             # )
 
-            loss = (
-                optax.l2_loss(predictions=y_predictions, targets=y).mean()
-                + optax.l2_loss(
-                    predictions=predicted_integrated_states[:, [0, 1, 3, 4]],
-                    targets=actual_integrated_states[:, [0, 1, 3, 4]],
-                ).mean()
-            )
-
             # jax.debug.print("loss {l}", l=loss)
-            return loss
+            return loss, (pred_loss, int_loss)
 
-        grad_fn = jax.value_and_grad(loss_fn)
-        loss_, grads = grad_fn(state.params)
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (loss_, (pred_loss_, int_loss_)), grads = grad_fn(state.params)
         state = state.apply_gradients(grads=grads)
-        return state, loss_
+        return state, loss_, pred_loss_, int_loss_
 
     # train one step, with full five step integration
     @jax.jit
@@ -444,7 +467,7 @@ def main(args):
             batch_x = train_x[perm, :]
             batch_y = train_y[perm, :]
             if args.only_onestep:
-                train_state, batch_loss = train_step_oneint(
+                train_state, batch_loss, pred_loss, int_loss = train_step_oneint(
                     train_state, batch_x, batch_y
                 )
             else:
@@ -453,7 +476,9 @@ def main(args):
                 )
             batch_losses.append(batch_loss)
             wandb.log(
-                {"train_loss_batch": jax.device_get(batch_loss)},
+                {"train_loss_batch": jax.device_get(batch_loss),
+                 "pred_loss_batch": jax.device_get(pred_loss),
+                 "int_loss_batch": jax.device_get(int_loss)},
                 step=b + (epoch * len(perms)),
             )
 
@@ -481,5 +506,5 @@ def main(args):
 
 
 if __name__ == "__main__":
-    args = dnmpc_train_args()
+    args = dnmpc_frenet_train_args()
     main(args)

@@ -37,12 +37,21 @@ def gen_data(args):
         print("Generating input state mesh grid")
         ey = np.arange(args.ey_min, args.ey_max + args.d_ey, args.d_ey)
         delta = np.arange(args.delta_min, args.delta_max + args.d_delta, args.d_delta)
-        vx_car = np.arange(args.vx_car_min, args.vx_car_max + args.d_v_car, args.d_v_car)
-        vy_car = np.arange(args.vy_car_min, args.vy_car_max + args.d_v_car, args.d_v_car)
+        vx_car = np.arange(args.vx_car_min, args.vx_car_max + args.d_vx_car, args.d_vx_car)
+        vy_car = np.arange(args.vy_car_min, args.vy_car_max + args.d_vy_car, args.d_vy_car)
         vx_goal = np.arange(args.vx_goal_min, args.vx_goal_max + args.d_v_goal, args.d_v_goal)
         wz = np.arange(args.wz_min, args.wz_max + args.d_wz, args.d_wz)
         epsi = np.arange(args.epsi_min, args.epsi_max + args.d_epsi, args.d_epsi)
         curv = np.arange(args.curv_min, args.curv_max + args.d_curv, args.d_curv)
+
+        print(f"ey: {ey}")
+        print(f"delta: {delta}")
+        print(f"vx_car: {vx_car}")
+        print(f"vy_car: {vy_car}")
+        print(f"vx_goal: {vx_goal}")
+        print(f"wz: {wz}")
+        print(f"epsi: {epsi}")
+        print(f"curv: {curv}")
 
         num_ey = len(ey)
         num_delta = len(delta)
@@ -68,8 +77,6 @@ def gen_data(args):
 
         print(f"Input state mesh grid generation completed: {len(ey)} samples")
         all_chunks = np.column_stack((ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv))
-
-        all_chunks = all_chunks[:1, :]
 
         # randomize order
         # np.random.shuffle(all_chunks)

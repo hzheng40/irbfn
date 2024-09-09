@@ -142,6 +142,7 @@ def intersect_point(point, radius, trajectory, t=0.0, wrap=False):
 
     return first_p, first_i, first_t
 
+
 @dataclass
 class mpc_config:
     NXK: int = 7  # length of dynamic state vector: z = [s, ey, delta, vx, vy, wz, eyaw]
@@ -154,10 +155,10 @@ class mpc_config:
         default_factory=lambda: np.diag([0.01, 5.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([0.0, 45., 0.0, 0.5, 5., 0.0, 15.0])
+        default_factory=lambda: np.diag([0.0, 45.0, 0.0, 0.5, 5.0, 0.0, 15.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [s, ey, delta, vx, vy, wz, eyaw]
     Qfk: list = field(
-        default_factory=lambda: np.diag([0.0, 45., 0.0, 0.5, 5., 0.0, 15.0])
+        default_factory=lambda: np.diag([0.0, 45.0, 0.0, 0.5, 5.0, 0.0, 15.0])
     )  # final state error matrix, penalty  for the final state constraints: [s, ey, delta, vx, vy, wz, eyaw]
     N_IND_SEARCH: int = 20  # Search index number
     DTK: float = 0.1  # time step [s] kinematic
@@ -180,8 +181,8 @@ class mpc_config:
     BR = 1.0  # TODO
     # DF = 1.0 * 3.74 * 9.81 / 2.0  # friction force front
     # DR = 1.0 * 3.74 * 9.81 / 2.0  # friction force rear
-    DF = None # friction force front, determined by mu and m post init
-    DR = None # friction force rear, determined by mu and m post init
+    DF = None  # friction force front, determined by mu and m post init
+    DR = None  # friction force rear, determined by mu and m post init
     LF: float = 0.15875  # distance from center of gravity to front axle
     LR: float = 0.17145  # distance from center of gravity to rear axle
     H: float = 0.074  # height of center of gravity
@@ -408,7 +409,9 @@ class NMPCPlanner:
                 - cur * ((vx * ca.cos(epsi)) / (1 - cur * ey)),
             )
 
-            deriv_x = ca.if_else(ca.sqrt(vx ** 2 + vy ** 2) < self.config.V_SWITCH, deriv_x_ls, deriv_x_hs)
+            deriv_x = ca.if_else(
+                ca.sqrt(vx**2 + vy**2) < self.config.V_SWITCH, deriv_x_ls, deriv_x_hs
+            )
 
             return deriv_x
 
@@ -434,7 +437,6 @@ class NMPCPlanner:
 
             # st_next_euler = st + (self.config.DTK * f(st, con, p))
             # self.opti.subject_to(st_next ==  st_next_euler)
-            
 
         self.opti.minimize(cost_fn)
 
@@ -451,15 +453,19 @@ class NMPCPlanner:
         self.opti.subject_to(self.X[3, :] < self.config.MAX_SPEED)
 
         # solver
+        jit_options = {"flags": ["-O3"], "verbose": True}
         ipopt_opts = {
-            'ipopt': {
-                'print_level': 1,
-                'max_iter': 200,
-                'acceptable_tol': 1e-8,
-                'acceptable_obj_change_tol': 1e-6,
-                'warm_start_init_point': 'yes',
+            "ipopt": {
+                "print_level": 1,
+                "max_iter": 200,
+                "acceptable_tol": 1e-8,
+                "acceptable_obj_change_tol": 1e-6,
+                "warm_start_init_point": "yes",
             },
-            'print_time': 0,
+            "print_time": 0,
+            "jit": True, 
+            "compiler": "shell",
+            "jit_options": jit_options,
         }
         self.opti.solver("ipopt", ipopt_opts)
 
@@ -480,6 +486,19 @@ class NMPCPlanner:
             epsi,
         )
         # print(f"current state: {current_state_vec}")
+        if self.debug:
+            self.debug_states = np.array(
+                [
+                    s,
+                    ey,
+                    current_state["delta"],
+                    current_state["linear_vel_x"],
+                    current_state["linear_vel_y"],
+                    current_state["ang_vel_z"],
+                    epsi,
+                    self.ref_path[5][0],
+                ]
+            )
 
         self.opti.set_initial(
             self.X, ca.repmat(current_state_vec, 1, self.config.TK + 1)
@@ -502,7 +521,6 @@ class NMPCPlanner:
         self.oa = u_sol[0, :].flatten()
         self.odelta_v = u_sol[1, :].flatten()
         self.odelta = x_sol[2, :].flatten()
-
 
         self.ox = x_sol[0, :].flatten()
         self.oy = x_sol[1, :].flatten()
@@ -579,13 +597,14 @@ class NMPCPlanner:
         # solve the NMPC problem
         oa, odelta_v = self.mpc_prob_solve(goal_state, current_state)
 
-        return oa, odelta_v
+        if self.debug:
+            return oa, odelta_v, self.debug_states
+        else:
+            return oa, odelta_v
 
     def mpc_prob_solve_aux(self, chunk):
         ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv = chunk
-        goal_state = ca.vertcat(
-            0.0, 0.0, 0.0, vx_goal, 0.0, 0.0, 0.0, curv
-        )
+        goal_state = ca.vertcat(0.0, 0.0, 0.0, vx_goal, 0.0, 0.0, 0.0, curv)
 
         current_state_vec = ca.vertcat(
             0.0,
@@ -614,7 +633,7 @@ class NMPCPlanner:
         except RuntimeError as e:
             # print(e)
             # print(f"ey {ey}, delta {delta}, vx_car {vx_car}, vy_car {vy_car}, vx_goal {vx_goal}, wz {wz}, epsi {epsi}, curv {curv}")
-            error_out = -999 * np.ones((self.config.TK, ))
+            error_out = -999 * np.ones((self.config.TK,))
             return error_out, error_out
 
         # extract solution

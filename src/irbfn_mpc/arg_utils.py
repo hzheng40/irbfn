@@ -40,34 +40,35 @@ def dnmpc_frenet_table_gen_args():
     parser = argparse.ArgumentParser()
     # gridding
     # states for frenet nmpc are [ey, delta, vx, vy, vgoal, wz, epsi, curv]
-    parser.add_argument("--ey_min", type=float, default=-0.5)
-    parser.add_argument("--ey_max", type=float, default=3.5)
-    parser.add_argument("--d_ey", type=float, default=0.25)
+    parser.add_argument("--ey_min", type=float, default=-0.2)
+    parser.add_argument("--ey_max", type=float, default=2.0)
+    parser.add_argument("--d_ey", type=float, default=0.2)
 
-    parser.add_argument("--delta_min", type=float, default=-0.34)
-    parser.add_argument("--delta_max", type=float, default=0.34)
-    parser.add_argument("--d_delta", type=float, default=0.2)
+    parser.add_argument("--delta_min", type=float, default=-0.2)
+    parser.add_argument("--delta_max", type=float, default=0.2)
+    parser.add_argument("--d_delta", type=float, default=0.1)
 
-    parser.add_argument("--vx_car_min", type=float, default=-1.0)
-    parser.add_argument("--vx_car_max", type=float, default=10.0)
+    parser.add_argument("--vx_car_min", type=float, default=1.0)
+    parser.add_argument("--vx_car_max", type=float, default=7.0)
     parser.add_argument("--vy_car_min", type=float, default=-1.0)
-    parser.add_argument("--vy_car_max", type=float, default=6.0)
-    parser.add_argument("--d_v_car", type=float, default=1.0)
+    parser.add_argument("--vy_car_max", type=float, default=1.0)
+    parser.add_argument("--d_vx_car", type=float, default=2.0)
+    parser.add_argument("--d_vy_car", type=float, default=0.2)
 
-    parser.add_argument("--vx_goal_min", type=float, default=0.0)
-    parser.add_argument("--vx_goal_max", type=float, default=10.0)
+    parser.add_argument("--vx_goal_min", type=float, default=3.0)
+    parser.add_argument("--vx_goal_max", type=float, default=7.0)
     parser.add_argument("--d_v_goal", type=float, default=2.0)
 
     parser.add_argument("--wz_min", type=float, default=-2.0)
     parser.add_argument("--wz_max", type=float, default=2.0)
-    parser.add_argument("--d_wz", type=float, default=0.4)
+    parser.add_argument("--d_wz", type=float, default=0.2)
 
-    parser.add_argument("--epsi_min", type=float, default=-3.4)
-    parser.add_argument("--epsi_max", type=float, default=3.4)
-    parser.add_argument("--d_epsi", type=float, default=0.34)
+    parser.add_argument("--epsi_min", type=float, default=-1.0)
+    parser.add_argument("--epsi_max", type=float, default=1.0)
+    parser.add_argument("--d_epsi", type=float, default=0.2)
 
-    parser.add_argument("--curv_min", type=float, default=-0.8)
-    parser.add_argument("--curv_max", type=float, default=0.8)
+    parser.add_argument("--curv_min", type=float, default=-0.4)
+    parser.add_argument("--curv_max", type=float, default=0.4)
     parser.add_argument("--d_curv", type=float, default=0.2)
 
     # run config
@@ -75,7 +76,7 @@ def dnmpc_frenet_table_gen_args():
     parser.add_argument("--save_path", type=str, default="/data/tables/frenet/")
 
     # mpc model config
-    parser.add_argument("--mu_min", type=float, default=0.2)
+    parser.add_argument("--mu_min", type=float, default=0.5)
     parser.add_argument("--mu_max", type=float, default=1.0)
     parser.add_argument("--d_mu", type=float, default=0.1)
     parser.add_argument("--cs", type=float, default=5.0)
@@ -107,6 +108,42 @@ def dnmpc_train_args():
     parser.add_argument("--batch_size", type=int, default=80000)
     parser.add_argument("--num_k", type=int, default=100)
     parser.add_argument("--train_epochs", type=int, default=1000)
+    parser.add_argument("--use_float64", action="store_true")
+    parser.add_argument("--run_name", type=str, default="dnmpc_4regions")
+    parser.add_argument("--run_tags", nargs="+", type=str)
+
+    parser.add_argument("--mu", type=float, default=1.0)
+    parser.add_argument("--cs", type=float, default=5.0)
+    
+    args = parser.parse_args()
+    return args
+
+
+def dnmpc_frenet_train_args():
+    parser = argparse.ArgumentParser()
+    # splits
+    parser.add_argument("--num_ey", type=int, default=1)
+    parser.add_argument("--num_delta", type=int, default=1)
+    parser.add_argument("--num_vx_car", type=int, default=1)
+    parser.add_argument("--num_vy_car", type=int, default=1)
+    parser.add_argument("--num_vx_goal", type=int, default=1)
+    parser.add_argument("--num_wz", type=int, default=1)
+    parser.add_argument("--num_epsi", type=int, default=1)
+    parser.add_argument("--num_curv", type=int, default=1)
+    # basis func
+    parser.add_argument("--basis_function", type=str, default="gaussian")
+    # data
+    parser.add_argument("--npz_path", type=str, required=True)
+    parser.add_argument("--mirror_data", action="store_true")
+    parser.add_argument("--only_onestep", action="store_true")
+    # training
+    parser.add_argument("--gpu", type=str, default="")
+    parser.add_argument("--seed", type=int, default=123)
+    parser.add_argument("--lr", type=float, default=0.001)
+    parser.add_argument("--max_grad_norm", type=float, default=1.0)
+    parser.add_argument("--batch_size", type=int, default=80000)
+    parser.add_argument("--num_k", type=int, default=100)
+    parser.add_argument("--train_epochs", type=int, default=10000)
     parser.add_argument("--use_float64", action="store_true")
     parser.add_argument("--run_name", type=str, default="dnmpc_4regions")
     parser.add_argument("--run_tags", nargs="+", type=str)

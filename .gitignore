@@ -1,5 +1,7 @@
 *video*
-
+*.o
+*.so
+*.c
 .vscode/
 data/lut.npz
 runs/
