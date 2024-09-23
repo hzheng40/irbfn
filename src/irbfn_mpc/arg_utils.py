@@ -42,38 +42,39 @@ def dnmpc_frenet_table_gen_args():
     # states for frenet nmpc are [ey, delta, vx, vy, vgoal, wz, epsi, curv]
     parser.add_argument("--ey_min", type=float, default=-0.2)
     parser.add_argument("--ey_max", type=float, default=2.0)
-    parser.add_argument("--d_ey", type=float, default=0.2)
+    parser.add_argument("--num_ey", type=int, default=12)
 
-    parser.add_argument("--delta_min", type=float, default=-0.2)
-    parser.add_argument("--delta_max", type=float, default=0.2)
-    parser.add_argument("--d_delta", type=float, default=0.1)
+    parser.add_argument("--delta_min", type=float, default=-0.3)
+    parser.add_argument("--delta_max", type=float, default=0.3)
+    parser.add_argument("--num_delta", type=int, default=7)
 
     parser.add_argument("--vx_car_min", type=float, default=1.0)
     parser.add_argument("--vx_car_max", type=float, default=7.0)
     parser.add_argument("--vy_car_min", type=float, default=-1.0)
     parser.add_argument("--vy_car_max", type=float, default=1.0)
-    parser.add_argument("--d_vx_car", type=float, default=2.0)
-    parser.add_argument("--d_vy_car", type=float, default=0.2)
+    parser.add_argument("--num_vx_car", type=int, default=11)
+    parser.add_argument("--num_vy_car", type=int, default=11)
 
     parser.add_argument("--vx_goal_min", type=float, default=3.0)
     parser.add_argument("--vx_goal_max", type=float, default=7.0)
-    parser.add_argument("--d_v_goal", type=float, default=2.0)
+    parser.add_argument("--num_v_goal", type=int, default=5)
 
-    parser.add_argument("--wz_min", type=float, default=-2.0)
-    parser.add_argument("--wz_max", type=float, default=2.0)
-    parser.add_argument("--d_wz", type=float, default=0.2)
+    parser.add_argument("--wz_min", type=float, default=-2.6)
+    parser.add_argument("--wz_max", type=float, default=2.6)
+    parser.add_argument("--num_wz", type=int, default=11)
 
     parser.add_argument("--epsi_min", type=float, default=-1.0)
     parser.add_argument("--epsi_max", type=float, default=1.0)
-    parser.add_argument("--d_epsi", type=float, default=0.2)
+    parser.add_argument("--num_epsi", type=int, default=11)
 
-    parser.add_argument("--curv_min", type=float, default=-0.4)
-    parser.add_argument("--curv_max", type=float, default=0.4)
-    parser.add_argument("--d_curv", type=float, default=0.2)
+    parser.add_argument("--curv_min", type=float, default=-0.1)
+    parser.add_argument("--curv_max", type=float, default=0.1)
+    parser.add_argument("--num_curv", type=int, default=3)
 
     # run config
     parser.add_argument("--n_jobs", type=int, default=100)
     parser.add_argument("--save_path", type=str, default="/data/tables/frenet/")
+    parser.add_argument("--additional_run_name", type=str, default="")
 
     # mpc model config
     parser.add_argument("--mu_min", type=float, default=0.5)
@@ -132,6 +133,10 @@ def dnmpc_frenet_train_args():
     parser.add_argument("--num_curv", type=int, default=1)
     # basis func
     parser.add_argument("--basis_function", type=str, default="gaussian")
+    parser.add_argument("--deeper", action="store_true")
+    parser.add_argument("--mlp", action="store_true")
+    parser.add_argument("--normalize_input", action="store_true")
+
     # data
     parser.add_argument("--npz_path", type=str, required=True)
     parser.add_argument("--mirror_data", action="store_true")
@@ -147,6 +152,16 @@ def dnmpc_frenet_train_args():
     parser.add_argument("--use_float64", action="store_true")
     parser.add_argument("--run_name", type=str, default="dnmpc_4regions")
     parser.add_argument("--run_tags", nargs="+", type=str)
+    # normalization
+    parser.add_argument("--max_accl", type=float, default=9.51)
+    parser.add_argument("--min_accl", type=float, default=-9.51)
+    parser.add_argument("--max_steerv", type=float, default=3.14159)
+    parser.add_argument("--min_steerv", type=float, default=-3.14159)
+    # warmstart/center
+    parser.add_argument("--use_centers", action="store_true")
+    parser.add_argument("--fixed_centers", action="store_true")
+    parser.add_argument("--fixed_width", action="store_true")
+    parser.add_argument("--centers_name", type=str, default="_top300mean")
 
     parser.add_argument("--mu", type=float, default=1.0)
     parser.add_argument("--cs", type=float, default=5.0)

@@ -10,7 +10,7 @@ import numpy as np
 import optax
 import chex
 
-# jax.config.update("jax_debug_nans", True)
+jax.config.update("jax_debug_nans", True)
 
 import wandb
 from tqdm import tqdm
@@ -32,7 +32,7 @@ from flax_rbf.flax_rbf import (
     gaussian_wide,
     gaussian_wider,
 )
-from irbfn_mpc.model import WCRBFNet
+from irbfn_mpc.model import WCRBFNet, DeeperWCRBFNet, MLP
 from irbfn_mpc.arg_utils import dnmpc_frenet_train_args
 from irbfn_mpc.dynamics import integrate_frenet_mult, dynamic_frenet_onestep_aux
 
@@ -47,6 +47,10 @@ def main(args):
     print("Loading data...")
     data = np.load(args.npz_path)
     inputs, outputs = data["inputs"], data["outputs"]
+    print("Removing infeasible...")
+    valid_ind = np.unique(np.where(outputs != -999)[0])
+    inputs = inputs[valid_ind]
+    outputs = outputs[valid_ind]
     # inputs [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
     ey = inputs[:, 0].flatten()
     delta = inputs[:, 1].flatten()
@@ -58,7 +62,22 @@ def main(args):
     curv = inputs[:, 7].flatten()
     accel = outputs[:, :, 0]
     deltv = outputs[:, :, 1]
+
+    centers = None
+    if args.use_centers:
+        assert args.centers_name is not None, "Must set centers file name suffix if use centers."
+        centers_data = np.load(args.npz_path[:-4] + args.centers_name + args.npz_path[-4:])
+        centers = centers_data["centers"]
+
+    # normalize
+    # accel = (outputs[:, :, 0] - args.min_accl) / (args.max_accl - args.min_accl)
+    # deltv = (outputs[:, :, 1] - args.min_steerv) / (args.max_steerv - args.min_steerv)
     print("Data import completed")
+
+    # min_accl = args.min_accl
+    # accl_range = args.max_accl - args.min_accl
+    # min_steerv = args.min_steerv
+    # steerv_range = args.max_steerv - args.min_steerv
 
     if args.mirror_data:
         print("Mirroring data...")
@@ -215,18 +234,48 @@ def main(args):
     rng, init_rng = jax.random.split(rng)
 
     # model init
-    wcrbf = WCRBFNet(
-        in_features=in_features,
-        out_features=out_features,
-        num_kernels=args.num_k,
-        basis_func=basis_function,
-        num_regions=num_regions,
-        lower_bounds=lower_bounds,
-        upper_bounds=upper_bounds,
-        dimension_ranges=dimension_ranges,
-        activation_idx=activation_idx,
-        delta=delta,
-    )
+    if args.deeper:
+        wcrbf = DeeperWCRBFNet(
+            in_features=in_features,
+            out_features=out_features,
+            num_kernels=args.num_k,
+            basis_func=basis_function,
+            num_regions=num_regions,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+            dimension_ranges=dimension_ranges,
+            activation_idx=activation_idx,
+            delta=delta,
+        )
+    elif args.mlp:
+        wcrbf = MLP(
+            in_features=in_features,
+            out_features=out_features,
+            num_kernels=args.num_k,
+            basis_func=basis_function,
+            num_regions=num_regions,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+            dimension_ranges=dimension_ranges,
+            activation_idx=activation_idx,
+            delta=delta,
+        )
+    else:
+        wcrbf = WCRBFNet(
+            in_features=in_features,
+            out_features=out_features,
+            num_kernels=args.num_k,
+            basis_func=basis_function,
+            num_regions=num_regions,
+            lower_bounds=lower_bounds,
+            upper_bounds=upper_bounds,
+            dimension_ranges=dimension_ranges,
+            activation_idx=activation_idx,
+            delta=delta,
+            centers=centers,
+            fixed_centers=args.fixed_centers,
+            fixed_width=args.fixed_width,
+        )
     params = wcrbf.init(init_rng, jnp.ones((args.batch_size, in_features)))
     params_shape = jax.tree_util.tree_map(jnp.shape, unfreeze(params))
     print("Initialized parameter shapes:\n", params_shape)
@@ -267,6 +316,13 @@ def main(args):
 
         def loss_fn(params):
             y_predictions = wcrbf.apply(params, x)
+            pred_loss = jnp.abs(y_predictions - y).mean()
+            # pred_loss = optax.l2_loss(predictions=y_predictions, targets=y).mean()
+            # # unnorm
+            # y_predictions = y_predictions.at[:, 0].multiply(accl_range)
+            # y_predictions = y_predictions.at[:, 0].add(min_accl)
+            # y_predictions = y_predictions.at[:, 1].multiply(steerv_range)
+            # y_predictions = y_predictions.at[:, 1].add(min_steerv)
             # [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
             x_pred_u = jnp.hstack((initial_state, y_predictions))
             x_u = jnp.hstack((initial_state, y))
@@ -276,14 +332,21 @@ def main(args):
                 x_pred_u, dyn_params
             )
 
-            pred_loss = jnp.abs(y_predictions - y).mean()
             int_loss = jnp.abs(
                 predicted_integrated_states
                 - actual_integrated_states
             ).mean()
 
-            loss = pred_loss + int_loss
+            # int_loss = optax.l2_loss(
+            #     predictions=predicted_integrated_states,
+            #     targets=actual_integrated_states
+            # ).mean()
+
+            loss = pred_loss + 100.0 * int_loss
+            
             # loss = pred_loss
+            # int_loss = 0.0
+            
             # loss = (
             #     optax.l2_loss(predictions=y_predictions, targets=y).mean()
             #     + optax.l2_loss(
@@ -293,7 +356,7 @@ def main(args):
             # )
 
             # jax.debug.print("loss {l}", l=loss)
-            return loss, (pred_loss, int_loss)
+            return loss, (pred_loss, 100.0 * int_loss)
 
         grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
         (loss_, (pred_loss_, int_loss_)), grads = grad_fn(state.params)
@@ -303,123 +366,32 @@ def main(args):
     # train one step, with full five step integration
     @jax.jit
     def train_step_fullint(state, x, y):
+        # input states x [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
+        # output from dynamics [ey, delta, vx_car, vy_car, wz, epsi]
+        initial_state = x[:, [0, 0, 1, 2, 3, 5, 6, 7]]
 
         def loss_fn(params):
-            DT = 0.1
-            WB = 0.33
-            MAX_SPEED = 7.0
-            MIN_SPEED = 0.0
-            MAX_STEER = 0.4189
-
             y_predictions = wcrbf.apply(params, x)
+            pred_loss = jnp.abs(y_predictions - y).mean()
+            # pred_loss = optax.huber_loss(y_predictions, y).mean()
 
-            batch_size = x.shape[0]
-            x_ = jnp.zeros(batch_size)
-            y_ = jnp.zeros(batch_size)
-            delta = jnp.zeros(batch_size)
-            v = jnp.clip(x[:, 0], a_min=MIN_SPEED, a_max=MAX_SPEED)
-            yaw = jnp.zeros(batch_size)
+            x_pred_u = jnp.hstack((initial_state, y_predictions))
+            x_u = jnp.hstack((initial_state, y))
 
-            x_actual = x_
-            y_actual = y_
-            delta_actual = delta
-            v_actual = v
-            yaw_actual = yaw
-            first_states_actual = None
-            final_states_actual = None
-            for i in range(5):
-                # for i in range(1):
-                a = y[:, i]
-                delta_v = y[:, i + 5]
-                x_actual = x_actual + v_actual * jnp.cos(yaw_actual) * DT
-                y_actual = y_actual + v_actual * jnp.sin(yaw_actual) * DT
-                delta_actual = delta_actual + delta_v * DT
-                delta_actual = jnp.clip(delta_actual, a_min=-MAX_STEER, a_max=MAX_STEER)
-                v_actual = v_actual + a * DT
-                v_actual = jnp.clip(v_actual, a_min=MIN_SPEED, a_max=MAX_SPEED)
-                yaw_actual = yaw_actual + (v_actual / WB) * jnp.tan(delta_actual) * DT
-                if i == 0:
-                    first_states_actual = jnp.vstack(
-                        [x_actual, y_actual, delta_actual, v_actual, yaw_actual]
-                    ).T
-                if i == 4:
-                    final_states_actual = jnp.vstack(
-                        [x_actual, y_actual, delta_actual, v_actual, yaw_actual]
-                    ).T
+            actual_states = integrate_frenet_mult(x_u, dyn_params)
+            pred_states =  integrate_frenet_mult(x_pred_u, dyn_params)
+            int_loss = jnp.abs(pred_states - actual_states).mean()
+            # int_loss = optax.huber_loss(pred_states[:, [0, 5], :], actual_states[:, [0, 5], :]).mean()
 
-            x_pred = x_
-            y_pred = y_
-            delta_pred = delta
-            v_pred = v
-            yaw_pred = yaw
-            first_states_pred = None
-            final_states_pred = None
-            for i in range(5):
-                # for i in range(1):
-                a = y_predictions[:, i]
-                delta_v = y_predictions[:, i + 5]
-                x_pred = x_pred + v_pred * jnp.cos(yaw_pred) * DT
-                y_pred = y_pred + v_pred * jnp.sin(yaw_pred) * DT
-                delta_pred = delta_pred + delta_v * DT
-                delta_pred = jnp.clip(delta_pred, a_min=-MAX_STEER, a_max=MAX_STEER)
-                v_pred = v_pred + a * DT
-                v_pred = jnp.clip(v_pred, a_min=MIN_SPEED, a_max=MAX_SPEED)
-                yaw_pred = yaw_pred + (v_pred / WB) * jnp.tan(delta_pred) * DT
-                if i == 0:
-                    first_states_pred = jnp.vstack(
-                        [x_pred, y_pred, delta_pred, v_pred, yaw_pred]
-                    ).T
-                if i == 4:
-                    final_states_pred = jnp.vstack(
-                        [x_pred, y_pred, delta_pred, v_pred, yaw_pred]
-                    ).T
+            loss = pred_loss + int_loss
+            return loss, (pred_loss, int_loss)
 
-            # loss = (
-            #     optax.l2_loss(
-            #         predictions=first_states_pred, targets=first_states_actual
-            #     ).mean()
-            #     + optax.l2_loss(
-            #         predictions=final_states_pred, targets=final_states_actual
-            #     ).mean()
-            #     + optax.l2_loss(predictions=y_predictions, targets=y).mean()
-            # )
-
-            loss = (
-                jnp.abs(y_predictions[:, [0, 5]] - y[:, [0, 5]]).mean()
-                + jnp.abs(first_states_pred - first_states_pred).mean()
-                + jnp.abs(final_states_pred - final_states_actual).mean()
-            )
-
-            # loss = (
-            #     jnp.abs(y_predictions[:, [0, 5]] - y[:, [0, 5]]).mean()
-            #     + jnp.abs(first_states_pred - first_states_pred).mean()
-            #     + jnp.abs(final_states_pred - final_states_actual).mean()
-            # )
-
-            # loss = (
-            #     optax.l2_loss(
-            #         predictions=predicted_integrated_states[:, 0, :],
-            #         targets=actual_integrated_states[:, 0, :],
-            #     ).mean()
-            #     + optax.l2_loss(
-            #         predictions=predicted_integrated_states[:, -1, :],
-            #         targets=actual_integrated_states[:, -1, :],
-            #     ).mean()
-            #     + optax.l2_loss(predictions=y_predictions, targets=y).mean()
-            # )
-            # jax.debug.print("predicted state any isnan {x}", x=jnp.any(jnp.isnan(predicted_integrated_states)))
-            # jax.debug.print("actual state any isnan {y}", y=jnp.any(jnp.isnan(actual_integrated_states)))
-            # jax.debug.print("loss: {l}", l=loss)
-
-            # loss = optax.l2_loss(predictions=y_predictions, targets=y).mean()
-            return loss
-
-        grad_fn = jax.value_and_grad(loss_fn)
-        loss_, grads = grad_fn(state.params)
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (loss_, (pred_loss_, int_loss_)), grads = grad_fn(state.params)
         # jax.debug.print("grad norm {g}", g=jax.tree.map(jnp.linalg.norm, grads))
         # jax.debug.print("loss {l}", l=loss_)
         state = state.apply_gradients(grads=grads)
-        return state, loss_
+        return state, loss_, pred_loss_, int_loss_
 
     # config logging
     yaml_dir = "./configs/" + args.run_name + ".yaml"
@@ -471,7 +443,7 @@ def main(args):
                     train_state, batch_x, batch_y
                 )
             else:
-                train_state, batch_loss = train_step_fullint(
+                train_state, batch_loss, pred_loss, int_loss = train_step_fullint(
                     train_state, batch_x, batch_y
                 )
             batch_losses.append(batch_loss)

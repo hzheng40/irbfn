@@ -149,16 +149,16 @@ class mpc_config:
     NU: int = 2  # length of input vector: u = = [steering speed, acceleration]
     TK: int = 5  # finite time horizon length
     Rk: list = field(
-        default_factory=lambda: np.diag([0.01, 5.0])
+        default_factory=lambda: np.diag([0.01, 1.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.01, 5.0])
+        default_factory=lambda: np.diag([0.01, 1.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([0.0, 45.0, 0.0, 0.5, 5.0, 0.0, 15.0])
+        default_factory=lambda: np.diag([0.0, 65.0, 0.0, 0.5, 5.0, 0.0, 15.0])
     )  # state error cost matrix, for the the next (T) prediction time steps [s, ey, delta, vx, vy, wz, eyaw]
     Qfk: list = field(
-        default_factory=lambda: np.diag([0.0, 45.0, 0.0, 0.5, 5.0, 0.0, 15.0])
+        default_factory=lambda: np.diag([0.0, 65.0, 0.0, 0.5, 5.0, 0.0, 15.0])
     )  # final state error matrix, penalty  for the final state constraints: [s, ey, delta, vx, vy, wz, eyaw]
     N_IND_SEARCH: int = 20  # Search index number
     DTK: float = 0.1  # time step [s] kinematic
@@ -183,11 +183,11 @@ class mpc_config:
     # DR = 1.0 * 3.74 * 9.81 / 2.0  # friction force rear
     DF = None  # friction force front, determined by mu and m post init
     DR = None  # friction force rear, determined by mu and m post init
-    LF: float = 0.15875  # distance from center of gravity to front axle
-    LR: float = 0.17145  # distance from center of gravity to rear axle
-    H: float = 0.074  # height of center of gravity
-    M: float = 3.74  # mass of vehicle
-    I: float = 0.04712  # moment of inertia
+    LF: float = 0.2735  # distance from center of gravity to front axle
+    LR: float = 0.2585  # distance from center of gravity to rear axle
+    H: float = 0.1875  # height of center of gravity
+    M: float = 15.32  # mass of vehicle
+    I: float = 0.64332  # moment of inertia
 
     def __post_init__(self):
         self.DF = self.MU * self.M * 9.81 / 2.0
@@ -630,11 +630,13 @@ class NMPCPlanner:
         # solve
         try:
             sol = self.opti.solve()
+            constraint_onehot = np.isclose(sol.value(self.opti.lam_g), 0.0).astype(int)
         except RuntimeError as e:
             # print(e)
             # print(f"ey {ey}, delta {delta}, vx_car {vx_car}, vy_car {vy_car}, vx_goal {vx_goal}, wz {wz}, epsi {epsi}, curv {curv}")
             error_out = -999 * np.ones((self.config.TK,))
-            return error_out, error_out
+            cons_error_out = -999 * np.ones((self.opti.lam_g.shape[0], ))
+            return error_out, error_out, cons_error_out
 
         # extract solution
         u_sol = sol.value(self.U)
@@ -644,4 +646,4 @@ class NMPCPlanner:
         self.odelta_v = u_sol[1, :].flatten()
         self.odelta = x_sol[2, :].flatten()
 
-        return self.oa, self.odelta_v
+        return self.oa, self.odelta_v, constraint_onehot

@@ -15,6 +15,8 @@ import numpy as np
 from typing import Sequence
 from f1tenth_gym.envs.track import Track
 
+import scipy.spatial as ss
+
 
 @jax.jit
 def get_closest_ind(input, all_inputs):
@@ -208,18 +210,23 @@ class ExplicitPlanner:
 class ExplicitFrenetPlanner:
     def __init__(
         self,
-        npz_path: str = "/data/tables/frenet/6ey_5delta_5vxcar_5vycar_5vxgoal_11wz_8epsi_5curv_mu1.0000000000000002_cs5.0_sorted.npz",
+        npz_path: str = "/data/tables/frenet/constraints_12ey_7delta_11vxcar_11vycar_5vxgoal_11wz_11epsi_3curv_mu1.0999999999999999_cs5.0_sorted.npz",
         track: Track = None,
     ):
         data = np.load(npz_path)
         inputs, outputs = data["inputs"], data["outputs"]
+        # build kd tree
+        self.kdtree = ss.KDTree(inputs)
 
         # TODO: these are hardcoded for now
         # self.inputs = inputs.reshape((5, 19, 24, 18, 5, 6, 12, -1))
         self.input_keys = []
         for ind in range(inputs.shape[1]):
             self.input_keys.append(np.unique(inputs[:, ind]))
-        self.outputs = outputs.reshape((6, 5, 5, 5, 5, 11, 8, 5, -1))
+        self.outputs_flat = outputs.copy()
+        self.inputs_flat = inputs.copy()
+        self.outputs = outputs.reshape((12, 7, 11, 11, 5, 11, 11, 3, 5, -1))
+        self.inputs = inputs.reshape((12, 7, 11, 11, 5, 11, 11, 3, -1))
 
         if track is not None:
             self.waypoints = [
@@ -263,6 +270,7 @@ class ExplicitFrenetPlanner:
                 7.0,
             ]
         )
+        self.lookup_keys = ["ey", "delta", "vx_car", "vy_car", "vx_goal", "wz", "epsi", "curv"]
 
     def calc_ref_trajectory(self, state, cx, cy, cyaw, sp, ckap):
         """
@@ -344,38 +352,47 @@ class ExplicitFrenetPlanner:
         )
 
         # input: [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
-        goal_needs_mirror = ey < 0
+        goal_needs_mirror = ey < -0.05
 
         lookup = np.array(
             [
                 -ey if goal_needs_mirror else ey,
                 current_state["delta"],
                 current_state["linear_vel_x"],
-                current_state["linear_vel_y"],
+                -current_state["linear_vel_y"] if goal_needs_mirror else current_state["linear_vel_y"],
                 self.ref_path[3][-1],
-                current_state["ang_vel_z"],
+                -current_state["ang_vel_z"] if goal_needs_mirror else current_state["ang_vel_z"],
                 -epsi if goal_needs_mirror else epsi,
                 self.ref_path[5][0],
             ]
         )
 
-        closest_ind = []
-        for val_ind, val in enumerate(lookup):
-            closest_ind.append(
-                min(
-                    self.outputs.shape[val_ind] - 1,
-                    np.searchsorted(self.input_keys[val_ind], val, side="right"),
-                )
-            )
+        for (l, keys) in zip(lookup, self.lookup_keys):
+            print(f"{keys} lookup: {l}")
+
+        # closest_ind = []
+        # for val_ind, val in enumerate(lookup):
+        #     closest_ind.append(
+        #         min(
+        #             self.outputs.shape[val_ind] - 1,
+        #             np.searchsorted(self.input_keys[val_ind], val, side="left"),
+        #         )
+        #     )
 
         # closest_ind = get_closest_ind(lookup, self.inputs)
-        pred_u = self.outputs[*closest_ind].flatten()
+        distance, closest_ind = self.kdtree.query(lookup)
+        print(f"kdtree lookup distance {distance}")
+        print(f"kdtree lookup inds {closest_ind}")
+        pred_u = self.outputs_flat[closest_ind]
+        print(f"looked up input: {self.inputs_flat[closest_ind]}")
+        print(f"accl seq:   {pred_u[:, 0]}")
+        print(f"steerv seq: {pred_u[:, 1]}")
         if np.any(pred_u == -999):
             print("invlaid output")
             return 0.0, 0.0
         # mirror inputs if only half dataset
         if goal_needs_mirror:
-            pred_u[5:] = -pred_u[5:]
+            pred_u[:, 1] = -pred_u[:, 1]
 
         states = np.array(
             [
@@ -389,7 +406,7 @@ class ExplicitFrenetPlanner:
                 self.ref_path[5][0],
             ]
         )
-        x_and_pred_u = np.hstack((states[None,], pred_u[None,]))
+        x_and_pred_u = np.hstack((states[None,], pred_u.flatten("F")[None,]))
         pred_x = integrate_frenet_mult(x_and_pred_u, self.dyn_params)
         self.ox = np.array(pred_x[0, :, 0])
         self.oy = np.array(pred_x[0, :, 1])
@@ -398,7 +415,7 @@ class ExplicitFrenetPlanner:
             self.ox[i] = curr_x
             self.oy[i] = curr_y
 
-        return pred_u[0], pred_u[5]
+        return pred_u[0, 0], pred_u[0, 1]
 
     def render_waypoints(self, e):
         """

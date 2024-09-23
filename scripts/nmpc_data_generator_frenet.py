@@ -1,4 +1,5 @@
 import os
+
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
@@ -12,7 +13,7 @@ from irbfn_mpc.nonlinear_dmpc_frenet import mpc_config as dmpc_config
 
 
 def gen_data(args):
-    
+
     all_mu = np.arange(args.mu_min, args.mu_max + args.d_mu, args.d_mu)
 
     for mu in all_mu[::-1]:
@@ -31,18 +32,32 @@ def gen_data(args):
             for chunk in iterations:
                 ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv = chunk
                 inputs = np.array([ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv])
-                solutions.append((inputs, solver.mpc_prob_solve_aux(inputs)))
+                sol_a, sol_deltv, sol_cons = solver.mpc_prob_solve_aux(inputs)
+                solutions.append((inputs, sol_a, sol_deltv, sol_cons))
             return solutions
 
         print("Generating input state mesh grid")
-        ey = np.arange(args.ey_min, args.ey_max + args.d_ey, args.d_ey)
-        delta = np.arange(args.delta_min, args.delta_max + args.d_delta, args.d_delta)
-        vx_car = np.arange(args.vx_car_min, args.vx_car_max + args.d_vx_car, args.d_vx_car)
-        vy_car = np.arange(args.vy_car_min, args.vy_car_max + args.d_vy_car, args.d_vy_car)
-        vx_goal = np.arange(args.vx_goal_min, args.vx_goal_max + args.d_v_goal, args.d_v_goal)
-        wz = np.arange(args.wz_min, args.wz_max + args.d_wz, args.d_wz)
-        epsi = np.arange(args.epsi_min, args.epsi_max + args.d_epsi, args.d_epsi)
-        curv = np.arange(args.curv_min, args.curv_max + args.d_curv, args.d_curv)
+
+        ey = np.linspace(args.ey_min, args.ey_max, num=args.num_ey, endpoint=True)
+        delta = np.linspace(
+            args.delta_min, args.delta_max, num=args.num_delta, endpoint=True
+        )
+        vx_car = np.linspace(
+            args.vx_car_min, args.vx_car_max, num=args.num_vx_car, endpoint=True
+        )
+        vy_car = np.linspace(
+            args.vy_car_min, args.vy_car_max, num=args.num_vy_car, endpoint=True
+        )
+        vx_goal = np.linspace(
+            args.vx_goal_min, args.vx_goal_max, num=args.num_v_goal, endpoint=True
+        )
+        wz = np.linspace(args.wz_min, args.wz_max, num=args.num_wz, endpoint=True)
+        epsi = np.linspace(
+            args.epsi_min, args.epsi_max, num=args.num_epsi, endpoint=True
+        )
+        curv = np.linspace(
+            args.curv_min, args.curv_max, num=args.num_curv, endpoint=True
+        )
 
         print(f"ey: {ey}")
         print(f"delta: {delta}")
@@ -61,10 +76,12 @@ def gen_data(args):
         num_wz = len(wz)
         num_epsi = len(epsi)
         num_curv = len(curv)
-        filename = f"{num_ey}ey_{num_delta}delta_{num_vx_car}vxcar_{num_vy_car}vycar_{num_vx_goal}vxgoal_{num_wz}wz_{num_epsi}epsi_{num_curv}curv_mu{mu}_cs{args.cs}.npz"
+        filename = f"constraints_{num_ey}ey_{num_delta}delta_{num_vx_car}vxcar_{num_vy_car}vycar_{num_vx_goal}vxgoal_{num_wz}wz_{num_epsi}epsi_{num_curv}curv_mu{mu}_cs{args.cs}_{args.additional_run_name}.npz"
 
-        ey_m, delta_m, vx_car_m, vy_car_m, vx_goal_m, wz_m, epsi_m, curv_m = np.meshgrid(
-            ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv, indexing="ij"
+        ey_m, delta_m, vx_car_m, vy_car_m, vx_goal_m, wz_m, epsi_m, curv_m = (
+            np.meshgrid(
+                ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv, indexing="ij"
+            )
         )
         ey = ey_m.flatten()
         delta = delta_m.flatten()
@@ -76,7 +93,9 @@ def gen_data(args):
         curv = curv_m.flatten()
 
         print(f"Input state mesh grid generation completed: {len(ey)} samples")
-        all_chunks = np.column_stack((ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv))
+        all_chunks = np.column_stack(
+            (ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv)
+        )
 
         # randomize order
         # np.random.shuffle(all_chunks)
@@ -85,7 +104,6 @@ def gen_data(args):
         unrand_ind = np.argsort(rand_ind)
 
         all_chunks = all_chunks[rand_ind]
-
         balanced_chunks = np.array_split(all_chunks, args.n_jobs, axis=0)
 
         print(f"Generating {filename}.")
@@ -98,19 +116,27 @@ def gen_data(args):
             table += frags
 
         print(f"Saving {filename}.")
-        table = [solution for solution in table if solution[1] is not None]
+        # table = [solution for solution in table if solution[1] is not None]
         inputs = np.array([solution[0] for solution in table])
-        outputs = np.array([solution[1] for solution in table])
+        outputs = np.array([solution[1:3] for solution in table])
+        constraints = np.array([solution[3] for solution in table])
         outputs = np.moveaxis(outputs, 1, 2)
 
         inputs_sorted = inputs[unrand_ind, :]
         outputs_sorted = outputs[unrand_ind, :]
+        constraints_sorted = constraints[unrand_ind, :]
 
-        np.savez(args.save_path + filename, inputs=inputs, outputs=outputs)
+        np.savez(
+            args.save_path + filename,
+            inputs=inputs,
+            outputs=outputs,
+            constraints=constraints,
+        )
         np.savez(
             args.save_path + filename[:-4] + "_sorted" + filename[-4:],
             inputs=inputs_sorted,
             outputs=outputs_sorted,
+            constraints=constraints_sorted,
         )
 
 
