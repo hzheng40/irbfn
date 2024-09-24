@@ -32,7 +32,7 @@ from flax_rbf.flax_rbf import (
     gaussian_wide,
     gaussian_wider,
 )
-from irbfn_mpc.model import WCRBFNet, DeeperWCRBFNet, MLP
+from irbfn_mpc.model import WCRBFNet, DeeperWCRBFNet, MLP, ClusterWCRBFNet
 from irbfn_mpc.arg_utils import dnmpc_frenet_train_args
 from irbfn_mpc.dynamics import integrate_frenet_mult, dynamic_frenet_onestep_aux
 
@@ -51,6 +51,9 @@ def main(args):
     valid_ind = np.unique(np.where(outputs != -999)[0])
     inputs = inputs[valid_ind]
     outputs = outputs[valid_ind]
+    if args.use_cluster:
+        constraints = data["constraints"]
+        constraints = constraints[valid_ind]
     # inputs [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
     ey = inputs[:, 0].flatten()
     delta = inputs[:, 1].flatten()
@@ -65,8 +68,12 @@ def main(args):
 
     centers = None
     if args.use_centers:
-        assert args.centers_name is not None, "Must set centers file name suffix if use centers."
-        centers_data = np.load(args.npz_path[:-4] + args.centers_name + args.npz_path[-4:])
+        assert (
+            args.centers_name is not None
+        ), "Must set centers file name suffix if use centers."
+        centers_data = np.load(
+            args.npz_path[:-4] + args.centers_name + args.npz_path[-4:]
+        )
         centers = centers_data["centers"]
 
     # normalize
@@ -225,6 +232,19 @@ def main(args):
         * args.num_curv
     )
 
+    if args.use_cluster:
+        # leave 1 region of networks for outside top k
+        num_regions = args.num_clusters + 1
+        # get clusterid one hots
+        print("Loading cluster int ids")
+        c_data = np.load(
+            args.npz_path[:-4] + f"_{args.num_clusters}_cluster_ids" + args.npz_path[-4:]
+        )
+        cluster_int_ids = c_data["cluster_int_ids"][valid_ind]
+        # convert to one hot
+        flattened_clusterid = np.zeros((len(cluster_int_ids), num_regions), dtype=int)
+        flattened_clusterid[np.arange(len(cluster_int_ids)), cluster_int_ids] = 1
+
     activation_idx = np.arange(in_features).tolist()
     delta = [15.0, 10.0, 100.0, 100.0, 100.0, 10.0, 10.0, 10.0]
     basis_function = eval(args.basis_function)
@@ -259,6 +279,14 @@ def main(args):
             dimension_ranges=dimension_ranges,
             activation_idx=activation_idx,
             delta=delta,
+        )
+    elif args.use_cluster:
+        wcrbf = ClusterWCRBFNet(
+            in_features=in_features,
+            out_features=out_features,
+            num_kernels=args.num_k,
+            basis_func=basis_function,
+            num_regions=num_regions,
         )
     else:
         wcrbf = WCRBFNet(
@@ -333,8 +361,7 @@ def main(args):
             )
 
             int_loss = jnp.abs(
-                predicted_integrated_states
-                - actual_integrated_states
+                predicted_integrated_states - actual_integrated_states
             ).mean()
 
             # int_loss = optax.l2_loss(
@@ -343,10 +370,10 @@ def main(args):
             # ).mean()
 
             loss = pred_loss + 100.0 * int_loss
-            
+
             # loss = pred_loss
             # int_loss = 0.0
-            
+
             # loss = (
             #     optax.l2_loss(predictions=y_predictions, targets=y).mean()
             #     + optax.l2_loss(
@@ -379,7 +406,7 @@ def main(args):
             x_u = jnp.hstack((initial_state, y))
 
             actual_states = integrate_frenet_mult(x_u, dyn_params)
-            pred_states =  integrate_frenet_mult(x_pred_u, dyn_params)
+            pred_states = integrate_frenet_mult(x_pred_u, dyn_params)
             int_loss = jnp.abs(pred_states - actual_states).mean()
             # int_loss = optax.huber_loss(pred_states[:, [0, 5], :], actual_states[:, [0, 5], :]).mean()
 
@@ -392,6 +419,38 @@ def main(args):
         # jax.debug.print("loss {l}", l=loss_)
         state = state.apply_gradients(grads=grads)
         return state, loss_, pred_loss_, int_loss_
+
+    # train one step, with full five step integration
+    @jax.jit
+    def train_step_fullint_withcluster(state, x, y, cluster_ids):
+        # input states x [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
+        # output from dynamics [ey, delta, vx_car, vy_car, wz, epsi]
+        initial_state = x[:, [0, 0, 1, 2, 3, 5, 6, 7]]
+
+        def loss_fn(params):
+            y_predictions, logits = wcrbf.apply(params, x)
+            cluster_loss = optax.softmax_cross_entropy(logits, cluster_ids).mean()
+
+            pred_loss = jnp.abs(y_predictions - y).mean()
+            # pred_loss = optax.huber_loss(y_predictions, y).mean()
+
+            x_pred_u = jnp.hstack((initial_state, y_predictions))
+            x_u = jnp.hstack((initial_state, y))
+
+            actual_states = integrate_frenet_mult(x_u, dyn_params)
+            pred_states = integrate_frenet_mult(x_pred_u, dyn_params)
+            int_loss = jnp.abs(pred_states - actual_states).mean()
+            # int_loss = optax.huber_loss(pred_states[:, [0, 5], :], actual_states[:, [0, 5], :]).mean()
+
+            loss = pred_loss + int_loss + cluster_loss
+            return loss, (pred_loss, int_loss, cluster_loss)
+
+        grad_fn = jax.value_and_grad(loss_fn, has_aux=True)
+        (loss_, (pred_loss_, int_loss_, cluster_loss_)), grads = grad_fn(state.params)
+        # jax.debug.print("grad norm {g}", g=jax.tree.map(jnp.linalg.norm, grads))
+        # jax.debug.print("loss {l}", l=loss_)
+        state = state.apply_gradients(grads=grads)
+        return state, loss_, pred_loss_, int_loss_, cluster_loss_
 
     # config logging
     yaml_dir = "./configs/" + args.run_name + ".yaml"
@@ -425,7 +484,9 @@ def main(args):
     # logging
     wandb.init(project="irbfn", config=config_dict, tags=args.run_tags)
 
-    def train_epoch(train_state, train_x, train_y, bs, epoch, epoch_rng):
+    def train_epoch(
+        train_state, train_x, train_y, bs, epoch, epoch_rng, train_cluster_id=None
+    ):
         # batching data
         num_train = train_x.shape[0]
         num_steps = num_train // bs
@@ -438,9 +499,20 @@ def main(args):
         for b, perm in enumerate(perms):
             batch_x = train_x[perm, :]
             batch_y = train_y[perm, :]
+            if train_cluster_id is not None:
+                batch_cluster_id = train_cluster_id[perm, :]
             if args.only_onestep:
                 train_state, batch_loss, pred_loss, int_loss = train_step_oneint(
                     train_state, batch_x, batch_y
+                )
+            elif args.use_cluster:
+                train_state, batch_loss, pred_loss, int_loss, cluster_loss = (
+                    train_step_fullint_withcluster(
+                        train_state,
+                        batch_x,
+                        batch_y,
+                        batch_cluster_id,
+                    )
                 )
             else:
                 train_state, batch_loss, pred_loss, int_loss = train_step_fullint(
@@ -448,9 +520,14 @@ def main(args):
                 )
             batch_losses.append(batch_loss)
             wandb.log(
-                {"train_loss_batch": jax.device_get(batch_loss),
-                 "pred_loss_batch": jax.device_get(pred_loss),
-                 "int_loss_batch": jax.device_get(int_loss)},
+                {
+                    "train_loss_batch": jax.device_get(batch_loss),
+                    "pred_loss_batch": jax.device_get(pred_loss),
+                    "int_loss_batch": jax.device_get(int_loss),
+                    "cluster_loss_batch": (
+                        jax.device_get(cluster_loss) if args.use_cluster else None
+                    ),
+                },
                 step=b + (epoch * len(perms)),
             )
 
@@ -465,9 +542,20 @@ def main(args):
     # training
     for e in tqdm(range(args.train_epochs)):
         rng, perm_rng = jax.random.split(rng)
-        state = train_epoch(
-            state, flattened_input, flattened_output, args.batch_size, e, perm_rng
-        )
+        if args.use_cluster:
+            state = train_epoch(
+                state,
+                flattened_input,
+                flattened_output,
+                args.batch_size,
+                e,
+                perm_rng,
+                flattened_clusterid,
+            )
+        else:
+            state = train_epoch(
+                state, flattened_input, flattened_output, args.batch_size, e, perm_rng
+            )
 
         if e % 100 == 0:
             checkpoints.save_checkpoint(

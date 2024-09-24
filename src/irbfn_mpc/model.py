@@ -31,7 +31,12 @@ import chex
 import jax
 import jax.numpy as jnp
 from flax import linen as nn
-from flax_rbf.flax_rbf import RBFLayer, WarmstartCenteredRBFLayer, FixedCenteredRBFLayer, FixedWidthCenteredRBFLayer
+from flax_rbf.flax_rbf import (
+    RBFLayer,
+    WarmstartCenteredRBFLayer,
+    FixedCenteredRBFLayer,
+    FixedWidthCenteredRBFLayer,
+)
 
 
 @partial(jax.jit, static_argnums=[1, 2, 3, 4, 5, 6])
@@ -193,7 +198,6 @@ class WCRBFNet(nn.Module):
         return out
 
 
-
 class DeeperWCRBFNet(nn.Module):
     """
     RBF Network, defined by a layer of RBF kernels and a linear layer
@@ -285,7 +289,6 @@ class DeeperWCRBFNet(nn.Module):
         return out
 
 
-
 class MLP(nn.Module):
     """
     RBF Network, defined by a layer of RBF kernels and a linear layer
@@ -333,45 +336,30 @@ class MLP(nn.Module):
         out = self.linear4(nn.relu(out3))
 
         return out
-    
+
 
 class ClusterWCRBFNet(nn.Module):
-    """
-    RBF Network, defined by a layer of RBF kernels and a linear layer
-
-    Args:
-        in_features (int): number of features in the input vector
-        out_features (int): number of features in the output vector
-        num_kernels (int): number of kernels in each RBF layer
-        basis_func (Callable): radial basis function to use
-        num_regions (int): number of regions used
-        region_bounds (Sequence[Sequence[float]]): upper and lower bounds of the regions
-        split_indices: (Sequence[int]): indices of the input vector that is split into regions
-        delta (float): scaling factor for region indicator function
-    """
-
     in_features: int
     out_features: int
     num_kernels: int
     basis_func: Callable
     num_regions: int
-    delta: Sequence[float]
-    centers: Optional[jax.Array] = None
-    fixed_centers: Optional[bool] = False
-    fixed_width: Optional[bool] = False
+    # TODO: centers to be added
 
     def setup(self):
         # check type of layers
-        if self.centers is not None:
-            if self.fixed_centers:
-                if self.fixed_width:
-                    layer_fn = FixedWidthCenteredRBFLayer
-                else:
-                    layer_fn = FixedCenteredRBFLayer
-            else:
-                layer_fn = WarmstartCenteredRBFLayer
-        else:
-            layer_fn = RBFLayer
+        # if self.centers is not None:
+        #     if self.fixed_centers:
+        #         if self.fixed_width:
+        #             layer_fn = FixedWidthCenteredRBFLayer
+        #         else:
+        #             layer_fn = FixedCenteredRBFLayer
+        #     else:
+        #         layer_fn = WarmstartCenteredRBFLayer
+        # else:
+        #     layer_fn = RBFLayer
+
+        layer_fn = RBFLayer
 
         # instantiate multi-headed RBFNets via vmap
         broadcasted_rbf = nn.vmap(
@@ -396,7 +384,6 @@ class ClusterWCRBFNet(nn.Module):
             in_features=self.in_features,
             num_kernels=self.num_kernels,
             basis_func=self.basis_func,
-            centers_values=self.centers,
         )
         self.linear = nn.Dense(self.out_features)
         self.cluster = nn.Dense(self.num_regions)
@@ -408,30 +395,20 @@ class ClusterWCRBFNet(nn.Module):
         Args:
             x (input vector, jnp.DeviceArray (batch_size, in_features))
         """
-
-        # indicators
-        gamma = _region_activation(
-            x,
-            self.num_regions,
-            self.num_split_dimensions,
-            self.lower_bounds,
-            self.upper_bounds,
-            self.delta,
-            self.dimension_ranges,
-        )
-        gamma_rep = jnp.repeat(jnp.expand_dims(gamma, -1), self.num_kernels, axis=-1)
-
         # rbf networks
         all_x = self.rbf_list(x)
 
-        # clustering
-        clusters = self.cluster(x)
-        cluster_ind = nn.softmax(clusters)
+        # clustering, output is prob for each region to activate
+        logits = self.cluster(x)
+        cluster_ind = nn.softmax(logits)
+        cluster_ind_rep = jnp.repeat(
+            jnp.expand_dims(cluster_ind, -1), self.num_kernels, axis=-1
+        )
 
         # interpolation
-        rbf_out = jnp.sum(gamma_rep * all_x, axis=1)
+        rbf_out = jnp.sum(cluster_ind_rep * all_x, axis=1)
 
         # linear layer
         out = self.linear(rbf_out)
 
-        return out
+        return out, logits

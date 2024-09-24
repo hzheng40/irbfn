@@ -161,7 +161,9 @@ def dnmpc_frenet_train_args():
     parser.add_argument("--use_centers", action="store_true")
     parser.add_argument("--fixed_centers", action="store_true")
     parser.add_argument("--fixed_width", action="store_true")
-    parser.add_argument("--centers_name", type=str, default="_top300mean")
+    parser.add_argument("--centers_name", type=str, default="_top500mode")
+    parser.add_argument("--use_cluster", action="store_true")
+    parser.add_argument("--num_clusters", type=int, default=499)
 
     parser.add_argument("--mu", type=float, default=1.0)
     parser.add_argument("--cs", type=float, default=5.0)
