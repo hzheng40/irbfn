@@ -210,7 +210,7 @@ class ExplicitPlanner:
 class ExplicitFrenetPlanner:
     def __init__(
         self,
-        npz_path: str = "/data/tables/frenet/constraints_12ey_7delta_11vxcar_11vycar_5vxgoal_11wz_11epsi_3curv_mu1.0999999999999999_cs5.0_sorted.npz",
+        npz_path: str = "/data/tables/frenet/constraints_12ey_7delta_11vxcar_11vycar_5vxgoal_11wz_13epsi_3curv_mu1.0999999999999999_cs5.0_wider_angles_sorted.npz",
         track: Track = None,
     ):
         data = np.load(npz_path)
@@ -225,8 +225,8 @@ class ExplicitFrenetPlanner:
             self.input_keys.append(np.unique(inputs[:, ind]))
         self.outputs_flat = outputs.copy()
         self.inputs_flat = inputs.copy()
-        self.outputs = outputs.reshape((12, 7, 11, 11, 5, 11, 11, 3, 5, -1))
-        self.inputs = inputs.reshape((12, 7, 11, 11, 5, 11, 11, 3, -1))
+        self.outputs = outputs.reshape((12, 7, 11, 11, 5, 11, 13, 3, 5, -1))
+        self.inputs = inputs.reshape((12, 7, 11, 11, 5, 11, 13, 3, -1))
 
         if track is not None:
             self.waypoints = [
