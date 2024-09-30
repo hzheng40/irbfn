@@ -396,14 +396,15 @@ class ClusterWCRBFNet(nn.Module):
             x (input vector, jnp.DeviceArray (batch_size, in_features))
         """
         # rbf networks
-        all_x = self.rbf_list(x)
+        all_x = self.rbf_list(x) # (bs, num_region, num_kernel)
+        # jax.debug.print("rbf out shape: {s}", s=all_x.shape)
 
         # clustering, output is prob for each region to activate
-        logits = self.cluster(x)
-        cluster_ind = nn.softmax(logits)
+        logits = self.cluster(x) # (bs, num_region)
+        cluster_ind = nn.softmax(logits) # (bs, num_region)
         cluster_ind_rep = jnp.repeat(
             jnp.expand_dims(cluster_ind, -1), self.num_kernels, axis=-1
-        )
+        ) # (bs, num_region, num_kernel)
 
         # interpolation
         rbf_out = jnp.sum(cluster_ind_rep * all_x, axis=1)
