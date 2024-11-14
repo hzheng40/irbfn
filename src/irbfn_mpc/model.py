@@ -30,6 +30,8 @@ from typing import Callable, Sequence, Optional
 import chex
 import jax
 import jax.numpy as jnp
+import numpy as np
+import math
 from flax import linen as nn
 from flax_rbf.flax_rbf import (
     RBFLayer,
@@ -387,6 +389,7 @@ class ClusterWCRBFNet(nn.Module):
         )
         self.linear = nn.Dense(self.out_features)
         self.cluster = nn.Dense(self.num_regions)
+        self.fourier = FourierFeaturesEncoding(6, self.in_features)
 
     def __call__(self, x):
         """
@@ -400,7 +403,7 @@ class ClusterWCRBFNet(nn.Module):
         # jax.debug.print("rbf out shape: {s}", s=all_x.shape)
 
         # clustering, output is prob for each region to activate
-        logits = self.cluster(x) # (bs, num_region)
+        logits = self.cluster(self.fourier(x)) # (bs, num_region)
         cluster_ind = nn.softmax(logits) # (bs, num_region)
         cluster_ind_rep = jnp.repeat(
             jnp.expand_dims(cluster_ind, -1), self.num_kernels, axis=-1
@@ -413,3 +416,19 @@ class ClusterWCRBFNet(nn.Module):
         out = self.linear(rbf_out)
 
         return out, logits
+
+
+class FourierFeaturesEncoding(nn.Module):
+    order: int
+    in_features: int
+
+    def setup(self):
+        scales = 2. ** np.arange(-1, self.order)
+        self.scales = jax.device_put(np.repeat(scales, 2 * self.in_features))
+
+    def __call__(self, x):
+        sin = jnp.sin(x)
+        cos = jnp.cos(x)
+        sincos = jnp.column_stack((sin, cos))
+        sincos_rep = jnp.tile(sincos, self.order + 1)
+        return sincos_rep / self.scales

@@ -210,7 +210,7 @@ class ExplicitPlanner:
 class ExplicitFrenetPlanner:
     def __init__(
         self,
-        npz_path: str = "/data/tables/frenet/constraints_12ey_7delta_11vxcar_11vycar_5vxgoal_11wz_13epsi_3curv_mu1.0999999999999999_cs5.0_wider_angles_sorted.npz",
+        npz_path: str = "/data/tables/frenet/constraints_23ey_7delta_11vxcar_11vycar_5vxgoal_11wz_13epsi_3curv_mu1.0999999999999999_cs5.0_full_angles_sorted.npz",
         track: Track = None,
     ):
         data = np.load(npz_path)
@@ -225,8 +225,8 @@ class ExplicitFrenetPlanner:
             self.input_keys.append(np.unique(inputs[:, ind]))
         self.outputs_flat = outputs.copy()
         self.inputs_flat = inputs.copy()
-        self.outputs = outputs.reshape((12, 7, 11, 11, 5, 11, 13, 3, 5, -1))
-        self.inputs = inputs.reshape((12, 7, 11, 11, 5, 11, 13, 3, -1))
+        self.outputs = outputs.reshape((23, 7, 11, 11, 5, 11, 13, 3, 5, -1))
+        self.inputs = inputs.reshape((23, 7, 11, 11, 5, 11, 13, 3, -1))
 
         if track is not None:
             self.waypoints = [
@@ -352,7 +352,10 @@ class ExplicitFrenetPlanner:
         )
 
         # input: [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
-        goal_needs_mirror = ey < -0.05
+        # goal_needs_mirror = ey < -0.21
+        goal_needs_mirror = False
+        print("----------------------------")
+        print(f"mirroring: {goal_needs_mirror}")
 
         lookup = np.array(
             [
@@ -383,7 +386,7 @@ class ExplicitFrenetPlanner:
         distance, closest_ind = self.kdtree.query(lookup)
         print(f"kdtree lookup distance {distance}")
         print(f"kdtree lookup inds {closest_ind}")
-        pred_u = self.outputs_flat[closest_ind]
+        pred_u = self.outputs_flat[closest_ind].copy()
         print(f"looked up input: {self.inputs_flat[closest_ind]}")
         print(f"accl seq:   {pred_u[:, 0]}")
         print(f"steerv seq: {pred_u[:, 1]}")
@@ -408,8 +411,8 @@ class ExplicitFrenetPlanner:
         )
         x_and_pred_u = np.hstack((states[None,], pred_u.flatten("F")[None,]))
         pred_x = integrate_frenet_mult(x_and_pred_u, self.dyn_params)
-        self.ox = np.array(pred_x[0, :, 0])
-        self.oy = np.array(pred_x[0, :, 1])
+        self.ox = np.array(np.hstack((s, pred_x[0, :, 0])))
+        self.oy = np.array(np.hstack((ey, pred_x[0, :, 1])))
         for i, (s, ey) in enumerate(zip(self.ox, self.oy)):
             curr_x, curr_y, _ = self.track.frenet_to_cartesian(s, ey, 0.0)
             self.ox[i] = curr_x

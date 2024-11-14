@@ -454,7 +454,8 @@ class IRBFNFrenetPlanner:
         )
 
         # input: [ey, delta, vx_car, vy_car, vx_goal, wz, epsi, curv]
-        goal_needs_mirror = ey < -0.05
+        # goal_needs_mirror = ey < -0.05
+        goal_needs_mirror = False
 
         rbf_in = jnp.array(
             [

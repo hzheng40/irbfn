@@ -40,9 +40,9 @@ def dnmpc_frenet_table_gen_args():
     parser = argparse.ArgumentParser()
     # gridding
     # states for frenet nmpc are [ey, delta, vx, vy, vgoal, wz, epsi, curv]
-    parser.add_argument("--ey_min", type=float, default=-0.2)
-    parser.add_argument("--ey_max", type=float, default=2.0)
-    parser.add_argument("--num_ey", type=int, default=12)
+    parser.add_argument("--ey_min", type=float, default=-3.0)
+    parser.add_argument("--ey_max", type=float, default=3.0)
+    parser.add_argument("--num_ey", type=int, default=23)
 
     parser.add_argument("--delta_min", type=float, default=-0.3)
     parser.add_argument("--delta_max", type=float, default=0.3)
@@ -59,13 +59,13 @@ def dnmpc_frenet_table_gen_args():
     parser.add_argument("--vx_goal_max", type=float, default=7.0)
     parser.add_argument("--num_v_goal", type=int, default=5)
 
-    parser.add_argument("--wz_min", type=float, default=-2.6)
-    parser.add_argument("--wz_max", type=float, default=2.6)
+    parser.add_argument("--wz_min", type=float, default=-3.4)
+    parser.add_argument("--wz_max", type=float, default=3.4)
     parser.add_argument("--num_wz", type=int, default=11)
 
-    parser.add_argument("--epsi_min", type=float, default=-1.0)
-    parser.add_argument("--epsi_max", type=float, default=1.0)
-    parser.add_argument("--num_epsi", type=int, default=11)
+    parser.add_argument("--epsi_min", type=float, default=-3.4)
+    parser.add_argument("--epsi_max", type=float, default=3.4)
+    parser.add_argument("--num_epsi", type=int, default=13)
 
     parser.add_argument("--curv_min", type=float, default=-0.1)
     parser.add_argument("--curv_max", type=float, default=0.1)
